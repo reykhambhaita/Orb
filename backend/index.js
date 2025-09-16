@@ -242,7 +242,7 @@ app.post('/api/location/enhanced', authenticateToken, async (req, res) => {
 // Protect other routes - example updates:
 
 // Mechanics routes - only mechanics and admins can access
-app.get('/api/mechanics/nearby/:userId', authenticateToken, requireActiveUser, async (req, res) => {
+app.get('/api/mechanics/nearby/:userId', authenticateToken, async (req, res) => {
   // Your existing logic, but use req.user.uid instead of params
   const userId = req.user.uid;
   // ... rest of existing code
