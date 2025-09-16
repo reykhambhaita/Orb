@@ -13,14 +13,36 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.reyk33.frontend",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to discover and connect to nearby devices.",
+        "NSLocationWhenInUseUsageDescription": "This app needs location access to provide accurate tracking.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses background location to improve accuracy."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.reyk33.frontend",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "FOREGROUND_SERVICE",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,7 +50,13 @@
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "react-native-background-geolocation"
-    ]
+      "react-native-ble-plx",
+      "react-native-wifi-reborn"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0af307d0-25d7-4d94-8a34-d01fdb3a386e"
+      }
+    }
   }
 }

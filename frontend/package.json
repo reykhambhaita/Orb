@@ -3,26 +3,35 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
     "@expo/metro-runtime": "~5.0.4",
-    "expo": "~53.0.20",
-    "expo-location": "^18.1.6",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "@react-native-community/geolocation": "^3.4.0",
+    "@react-native-community/netinfo": "^11.4.1",
+    "expo": "53.0.22",
+    "expo-location": "~18.1.6",
     "expo-secure-store": "~14.2.4",
+    "expo-sensors": "~14.1.4",
     "expo-sqlite": "~15.2.14",
     "expo-status-bar": "~2.2.3",
+    "firebase": "^12.2.1",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "react-native": "0.79.5",
-    "react-native-background-geolocation": "^4.18.9",
-    "react-native-web": "^0.20.0"
+    "react-native": "0.79.6",
+    "react-native-ble-manager": "^12.1.5",
+    "react-native-ble-plx": "^3.5.0",
+    "react-native-permissions": "^5.4.2",
+    "react-native-web": "^0.20.0",
+    "react-native-wifi-reborn": "^4.13.6"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.20.0",
+    "expo-module-scripts": "^5.0.7"
   },
   "private": true
 }

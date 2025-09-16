@@ -1,18 +1,9 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import LocationTracker from './src/components/location/LocationTracker';
+// App.js - Replace your existing App.js with this
+import MultiModalLocationTracker from './src/components/location/MultiModalLocationTracker';
+
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <LocationTracker />
-    </View>
+    <MultiModalLocationTracker/>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-});
