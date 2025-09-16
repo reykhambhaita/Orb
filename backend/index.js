@@ -249,58 +249,8 @@ app.get('/api/mechanics/nearby/:userId', authenticateToken, async (req, res) => 
 });
 
 // Admin only routes
-app.post('/api/admin/mechanics/update-regions',
-  authenticateToken,
-  requireRole('admin'),
-  async (req, res) => {
-    // Your existing admin logic
-  }
-);
 
 // Mechanic registration/update route
-app.post('/api/mechanic/profile',
-  authenticateToken,
-  requireRole(['mechanic', 'admin']),
-  async (req, res) => {
-    try {
-      const { address, services, organisation, location } = req.body;
-      const userId = req.user.uid;
-
-      // Update or create mechanic profile in MongoDB
-      const mechanicData = {
-        userId,
-        username: req.user.username,
-        phone: req.user.phone,
-        address,
-        services: Array.isArray(services) ? services : services.split(',').map(s => s.trim()),
-        organisation,
-        location: {
-          lat: encrypt(location.lat),
-          lng: encrypt(location.lng),
-          locatedAt: new Date()
-        },
-        isActive: true,
-        ratings: [],
-        region: determineRegion(location.lat, location.lng),
-        lastSyncVersion: 1
-      };
-
-      const existingMechanic = await Mechanic.findOne({ userId });
-
-      if (existingMechanic) {
-        await Mechanic.findByIdAndUpdate(existingMechanic._id, mechanicData);
-      } else {
-        const newMechanic = new Mechanic(mechanicData);
-        await newMechanic.save();
-      }
-
-      res.json({ success: true, message: 'Mechanic profile updated' });
-    } catch (error) {
-      console.error('Error updating mechanic profile:', error);
-      res.status(500).json({ error: 'Failed to update profile' });
-    }
-  }
-);
 
 // Get current user profile
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
