@@ -160,7 +160,9 @@ const decryptCoordinate = (encryptedCoord) => {
 };
 
 // Routes
-
+app.get('/', (req, res) => {
+  res.send('Welcome to the Location Tracker API');
+}
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
