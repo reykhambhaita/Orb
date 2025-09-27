@@ -160,9 +160,7 @@ const decryptCoordinate = (encryptedCoord) => {
 };
 
 // Routes
-app.get('/', (req, res) => {
-  res.send('Welcome to the Location Tracker API');
-}
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -196,7 +194,7 @@ app.post('/api/location/enhanced', async (req, res) => {
       longitude,
       accuracy,
       source,
-      userId: userId ? mongoose.Types.ObjectId(userId) : undefined,
+      userId: userId ? new mongoose.Types.ObjectId(userId) : undefined,
       encryptedLat: encryptCoordinate(latitude),
       encryptedLng: encryptCoordinate(longitude),
       locatedAt: new Date()
@@ -278,7 +276,7 @@ app.post('/api/location/bulk-sync', async (req, res) => {
       longitude: loc.longitude,
       accuracy: loc.accuracy || 10,
       source: loc.source || 'offline',
-      userId: loc.userId ? mongoose.Types.ObjectId(loc.userId) : undefined,
+      userId: loc.userId ? new mongoose.Types.ObjectId(loc.userId) : undefined,
       encryptedLat: encryptCoordinate(loc.latitude),
       encryptedLng: encryptCoordinate(loc.longitude),
       locatedAt: loc.timestamp ? new Date(loc.timestamp) : new Date(),
@@ -444,8 +442,7 @@ app.get('/api/locations', async (req, res) => {
 
     let query = {};
     if (userId) {
-      query.userId = mongoose.Types.ObjectId(userId);
-    }
+query.userId = new mongoose.Types.ObjectId(userId);    }
     if (source) {
       query.source = source;
     }
