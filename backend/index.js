@@ -66,7 +66,7 @@ function determineRegion(lat, lng) {
 }
 
 
-api.post('/', (req, res) => {
+api.get('/', (req, res) => {
   res.send('Road Mechanic Backend is running');
 });
 // Save user location & return nearby mechanics
