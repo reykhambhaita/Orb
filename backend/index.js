@@ -5,15 +5,15 @@ import mongoose from 'mongoose';
 import { Landmark, Mechanic, User, UserLocation } from './models.js';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-mongoose.connect('mongodb://localhost:27017/roadmechanic')
-  .then(() => console.log("âœ… Connected to MongoDB"))
-  .catch(err => console.error("âŒ MongoDB connection error:", err));
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/roadmechanic')
+  .then(() => console.log("Connected to MongoDB"))
+  .catch(err => console.error("MongoDB connection error:", err));
 
 // Encryption setup
 const ENCRYPTION_KEY = crypto
@@ -39,9 +39,9 @@ function decrypt(text) {
   return parseFloat(decrypted);
 }
 
-// Haversine formula (updated to return meters)
+// Haversine distance calculation
 function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371000; // meters (changed from km)
+  const R = 6371000; // meters
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat/2)**2 +
@@ -51,37 +51,48 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-// Calculate average rating
 function calculateAverageRating(ratings) {
   if (!ratings || ratings.length === 0) return 0;
   return ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length;
 }
 
-// Determine region based on coordinates (simple implementation)
 function determineRegion(lat, lng) {
-  // You can implement more sophisticated region detection here
-  const latZone = Math.floor(lat / 5) * 5; // Group by 5-degree zones
+  const latZone = Math.floor(lat / 5) * 5;
   const lngZone = Math.floor(lng / 5) * 5;
   return `region_${latZone}_${lngZone}`;
 }
 
-
+// Root endpoint
 app.get('/', (req, res) => {
-  res.send('Road Mechanic Backend is running');
+  res.json({
+    message: 'Road Mechanic Backend API',
+    version: '2.0',
+    endpoints: [
+      'POST /api/location/enhanced - Save location and get nearby data',
+      'POST /api/location/bulk-sync - Bulk sync offline locations',
+      'POST /api/mechanics/offline-sync - Download mechanics for offline',
+      'POST /api/landmarks/offline-sync - Download landmarks for offline',
+      'GET /api/debug/db-stats - Database statistics',
+      'GET /api/health - Health check'
+    ]
+  });
 });
-// Save user location & return nearby mechanics
-app.post('/api/location', async (req, res) => {
+
+// CORE LOCATION ENDPOINT - matches MultiModalLocationTracker
+app.post('/api/location/enhanced', async (req, res) => {
   try {
-    const { latitude, longitude, userId } = req.body;
-    if (!latitude || !longitude || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    const { latitude, longitude, userId = 'user123', accuracy, source, includeNearby = true, radius = 10000 } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: 'Missing latitude or longitude' });
     }
 
-    // Encrypt coordinates
+    console.log(`Saving location: ${latitude}, ${longitude} from ${source || 'unknown'}`);
+
+    // Encrypt and save location
     const encryptedLat = encrypt(latitude);
     const encryptedLng = encrypt(longitude);
 
-    // Save user location
     const userLocation = new UserLocation({
       userId,
       encryptedLat,
@@ -90,106 +101,163 @@ app.post('/api/location', async (req, res) => {
     });
     await userLocation.save();
 
-    // Update user's lastLocation reference and sync preferences
+    // Update user record
     const region = determineRegion(latitude, longitude);
-    await User.findByIdAndUpdate(userId, {
-      lastLocation: userLocation._id,
-      lastOfflineSync: new Date(),
-      $addToSet: { preferredRegions: region }
-    });
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        lastLocation: userLocation._id,
+        lastOfflineSync: new Date(),
+        $addToSet: { preferredRegions: region }
+      },
+      { upsert: true }
+    );
 
-    // Find nearby mechanics (within 10km)
-    const mechanics = await Mechanic.find({ isActive: true });
-    const nearbyMechanics = mechanics
-      .map(m => {
-        const mechLat = decrypt(m.location.lat);
-        const mechLng = decrypt(m.location.lng);
-        const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
-        return { ...m.toObject(), distance };
-      })
-      .filter(m => m.distance <= 10000) // 10km in meters
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 5);
-
-    res.json({
+    let response = {
       success: true,
       message: 'Location saved successfully',
       region: region,
-      nearbyMechanics: nearbyMechanics.map(m => ({
-        id: m._id,
-        username: m.username,
-        address: m.address,
-        organisation: m.organisation,
-        avgRating: calculateAverageRating(m.ratings),
-        ratingCount: m.ratings.length,
-        services: m.services,
-        phone: m.phone,
-        distance: Math.round(m.distance)
-      }))
-    });
+      locationId: userLocation._id
+    };
 
-  } catch (error) {
-    console.error('âŒ Error saving location:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+    if (includeNearby) {
+      // Get nearby mechanics
+      const mechanics = await Mechanic.find({ isActive: true });
+      const nearbyMechanics = mechanics
+        .map(m => {
+          try {
+            const mechLat = decrypt(m.location.lat);
+            const mechLng = decrypt(m.location.lng);
+            const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
+            return {
+              id: m._id,
+              username: m.username,
+              address: m.address,
+              latitude: mechLat,
+              longitude: mechLng,
+              organisation: m.organisation,
+              avgRating: calculateAverageRating(m.ratings),
+              ratingCount: m.ratings.length,
+              services: m.services,
+              phone: m.phone,
+              distance: Math.round(distance)
+            };
+          } catch (error) {
+            console.error('Error decrypting mechanic location:', m._id);
+            return null;
+          }
+        })
+        .filter(m => m !== null && m.distance <= radius)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 10);
 
-// Get nearby mechanics for a user
-app.get('/api/mechanics/nearby/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { radius = 30000, services } = req.query; // Default 30km radius
+      // Get nearby landmarks
+      const landmarks = await Landmark.find({});
+      const nearbyLandmarks = landmarks
+        .map(l => {
+          const distance = calculateDistance(latitude, longitude, l.location.lat, l.location.lng);
+          return {
+            id: l._id,
+            name: l.name,
+            category: l.category,
+            location: l.location,
+            distance: Math.round(distance)
+          };
+        })
+        .filter(l => l.distance <= radius)
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 10);
 
-    const userLocation = await UserLocation.findOne({ userId }).sort({ locatedAt: -1 });
-    if (!userLocation) return res.status(404).json({ error: 'User location not found' });
-
-    const latitude = decrypt(userLocation.encryptedLat);
-    const longitude = decrypt(userLocation.encryptedLng);
-
-    let query = { isActive: true };
-    if (services) {
-      const serviceArray = services.split(',');
-      query.services = { $in: serviceArray };
+      response.nearbyMechanics = nearbyMechanics;
+      response.nearbyLandmarks = nearbyLandmarks;
     }
 
-    const mechanics = await Mechanic.find(query);
-    const nearbyMechanics = mechanics
-      .map(m => {
-        const mechLat = decrypt(m.location.lat);
-        const mechLng = decrypt(m.location.lng);
-        const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
-        return { ...m.toObject(), distance };
-      })
-      .filter(m => m.distance <= parseInt(radius))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 10);
-
-    res.json({
-      nearbyMechanics: nearbyMechanics.map(m => ({
-        id: m._id,
-        username: m.username,
-        address: m.address,
-        organisation: m.organisation,
-        avgRating: calculateAverageRating(m.ratings),
-        ratingCount: m.ratings.length,
-        services: m.services,
-        phone: m.phone,
-        distance: Math.round(m.distance)
-      }))
-    });
+    res.json(response);
 
   } catch (error) {
-    console.error('âŒ Error fetching nearby mechanics:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Location save error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
 
-// OFFLINE SYNC ENDPOINTS
+// BULK SYNC - matches MultiModalLocationTracker offline sync
+app.post('/api/location/bulk-sync', async (req, res) => {
+  try {
+    const { locations } = req.body;
 
-// Download mechanics for offline use
+    if (!Array.isArray(locations) || locations.length === 0) {
+      return res.status(400).json({ error: 'Locations array required' });
+    }
+
+    console.log(`Processing bulk sync for ${locations.length} locations`);
+
+    const results = {
+      success: true,
+      data: {
+        total: locations.length,
+        count: 0,
+        failed: 0,
+        errors: []
+      }
+    };
+
+    for (const locationData of locations) {
+      try {
+        const { latitude, longitude, userId = 'user123', timestamp, source } = locationData;
+
+        if (latitude && longitude) {
+          const encryptedLat = encrypt(latitude);
+          const encryptedLng = encrypt(longitude);
+
+          const userLocation = new UserLocation({
+            userId,
+            encryptedLat,
+            encryptedLng,
+            locatedAt: timestamp ? new Date(timestamp) : new Date()
+          });
+
+          await userLocation.save();
+          results.data.count++;
+
+          // Update user's last location
+          const region = determineRegion(latitude, longitude);
+          await User.findByIdAndUpdate(
+            userId,
+            {
+              lastLocation: userLocation._id,
+              lastOfflineSync: new Date(),
+              $addToSet: { preferredRegions: region }
+            },
+            { upsert: true }
+          );
+
+        } else {
+          results.data.failed++;
+          results.data.errors.push('Missing latitude or longitude');
+        }
+      } catch (error) {
+        results.data.failed++;
+        results.data.errors.push(error.message);
+      }
+    }
+
+    console.log(`Bulk sync completed: ${results.data.count}/${results.data.total} successful`);
+    res.json(results);
+
+  } catch (error) {
+    console.error('Bulk sync error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Bulk sync failed',
+      details: error.message
+    });
+  }
+});
+
+// OFFLINE MECHANICS SYNC
 app.post('/api/mechanics/offline-sync', async (req, res) => {
   try {
-    const { location, radius = 50000, includeInactive = false, decryptCoordinates = true } = req.body;
+    const { location, radius = 50000, decryptCoordinates = true } = req.body;
 
     if (!location || !location.lat || !location.lng) {
       return res.status(400).json({ error: 'Location coordinates required' });
@@ -198,14 +266,7 @@ app.post('/api/mechanics/offline-sync', async (req, res) => {
     const { lat, lng } = location;
     const region = determineRegion(lat, lng);
 
-    // Build query
-    let query = {};
-    if (!includeInactive) {
-      query.isActive = true;
-    }
-
-    // Get all mechanics and filter by distance
-    const mechanics = await Mechanic.find(query).sort({ priority: -1, updatedAt: -1 });
+    const mechanics = await Mechanic.find({ isActive: true }).sort({ priority: -1 });
 
     const nearbyMechanics = mechanics
       .map(m => {
@@ -225,51 +286,47 @@ app.post('/api/mechanics/offline-sync', async (req, res) => {
             isActive: m.isActive,
             region: m.region || region,
             priority: m.priority || 0,
-            lastSyncVersion: m.lastSyncVersion || 1,
             distance: distance
           };
 
-          // Include decrypted coordinates if requested
           if (decryptCoordinates) {
             mechanicData.location = {
               lat: mechLat,
               lng: mechLng,
               locatedAt: m.location.locatedAt
             };
-          } else {
-            mechanicData.location = m.location;
           }
 
           return mechanicData;
         } catch (error) {
-          console.error('Error processing mechanic:', m._id, error);
+          console.error('Error processing mechanic:', m._id);
           return null;
         }
       })
       .filter(m => m !== null && m.distance <= radius)
       .sort((a, b) => a.distance - b.distance);
 
-    const currentSyncVersion = Math.floor(Date.now() / 1000); // Unix timestamp
-
     res.json({
       success: true,
-      mechanics: nearbyMechanics,
-      syncVersion: currentSyncVersion,
-      region: region,
-      downloadedAt: new Date().toISOString(),
-      totalCount: nearbyMechanics.length
+      data: {
+        mechanics: nearbyMechanics,
+        syncVersion: Math.floor(Date.now() / 1000),
+        region: region,
+        downloadedAt: new Date().toISOString(),
+        totalCount: nearbyMechanics.length
+      }
     });
 
   } catch (error) {
-    console.error('âŒ Error in offline mechanic sync:', error);
-    res.status(500).json({ error: 'Failed to sync mechanics for offline use' });
+    console.error('Mechanic sync error:', error);
+    res.status(500).json({ error: 'Failed to sync mechanics', details: error.message });
   }
 });
 
-// Download landmarks for offline use
+// OFFLINE LANDMARKS SYNC
 app.post('/api/landmarks/offline-sync', async (req, res) => {
   try {
-    const { location, radius = 50000, categories } = req.body;
+    const { location, radius = 30000, categories } = req.body;
 
     if (!location || !location.lat || !location.lng) {
       return res.status(400).json({ error: 'Location coordinates required' });
@@ -278,7 +335,6 @@ app.post('/api/landmarks/offline-sync', async (req, res) => {
     const { lat, lng } = location;
     const region = determineRegion(lat, lng);
 
-    // Build query
     let query = {};
     if (categories && categories.length > 0) {
       query.category = { $in: categories };
@@ -296,518 +352,93 @@ app.post('/api/landmarks/offline-sync', async (req, res) => {
           location: l.location,
           region: l.region || region,
           priority: l.priority || 0,
-          lastSyncVersion: l.lastSyncVersion || 1,
           distance: distance
         };
       })
       .filter(l => l.distance <= radius)
       .sort((a, b) => a.distance - b.distance);
 
-    const currentSyncVersion = Math.floor(Date.now() / 1000);
-
     res.json({
       success: true,
-      landmarks: nearbyLandmarks,
-      syncVersion: currentSyncVersion,
-      region: region,
-      downloadedAt: new Date().toISOString(),
-      totalCount: nearbyLandmarks.length
-    });
-
-  } catch (error) {
-    console.error('âŒ Error in offline landmark sync:', error);
-    res.status(500).json({ error: 'Failed to sync landmarks for offline use' });
-  }
-});
-
-// Get sync status for a user
-app.get('/api/sync/status/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const lastLocation = await UserLocation.findById(user.lastLocation);
-
-    res.json({
-      lastOfflineSync: user.lastOfflineSync,
-      preferredRegions: user.preferredRegions || [],
-      offlineRadius: user.offlineRadius || 50000,
-      lastLocation: lastLocation ? {
-        lat: decrypt(lastLocation.encryptedLat),
-        lng: decrypt(lastLocation.encryptedLng),
-        timestamp: lastLocation.locatedAt
-      } : null
-    });
-
-  } catch (error) {
-    console.error('âŒ Error fetching sync status:', error);
-    res.status(500).json({ error: 'Failed to fetch sync status' });
-  }
-});
-
-
-// Get all mechanics
-app.get('/api/mechanics/all', async (req, res) => {
-  try {
-    const { includeInactive = false, region, limit = 1000 } = req.query;
-
-    let query = {};
-    if (!includeInactive) {
-      query.isActive = true;
-    }
-    if (region) {
-      query.region = region;
-    }
-
-    const mechanics = await Mechanic.find(query)
-      .limit(parseInt(limit))
-      .sort({ priority: -1, updatedAt: -1 });
-
-    res.json({
-      mechanics: mechanics.map(m => ({
-        ...m.toObject(),
-        avgRating: calculateAverageRating(m.ratings),
-        ratingCount: m.ratings.length
-      })),
-      totalCount: mechanics.length
-    });
-  } catch (error) {
-    console.error('âŒ Error fetching all mechanics:', error);
-    res.status(500).json({ error: 'Failed to fetch mechanics' });
-  }
-});
-
-// Get all landmarks
-app.get('/api/landmarks/all', async (req, res) => {
-  try {
-    const { category, region, limit = 1000 } = req.query;
-
-    let query = {};
-    if (category) {
-      query.category = category;
-    }
-    if (region) {
-      query.region = region;
-    }
-
-    const landmarks = await Landmark.find(query)
-      .limit(parseInt(limit))
-      .sort({ priority: -1, updatedAt: -1 });
-
-    res.json({
-      landmarks: landmarks,
-      totalCount: landmarks.length
-    });
-  } catch (error) {
-    console.error('âŒ Error fetching landmarks:', error);
-    res.status(500).json({ error: 'Failed to fetch landmarks' });
-  }
-});
-
-// ADMIN ENDPOINTS
-
-
-// Bulk update mechanic regions (for initial setup)
-app.post('/api/admin/mechanics/update-regions', async (req, res) => {
-  try {
-    const mechanics = await Mechanic.find({});
-    let updated = 0;
-
-    for (const mechanic of mechanics) {
-      try {
-        const lat = decrypt(mechanic.location.lat);
-        const lng = decrypt(mechanic.location.lng);
-        const region = determineRegion(lat, lng);
-
-        await Mechanic.findByIdAndUpdate(mechanic._id, {
-          region: region,
-          lastSyncVersion: 1
-        });
-        updated++;
-      } catch (error) {
-        console.error(`Failed to update mechanic ${mechanic._id}:`, error);
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Updated regions for ${updated} mechanics`
-    });
-  } catch (error) {
-    console.error('âŒ Error updating mechanic regions:', error);
-    res.status(500).json({ error: 'Failed to update mechanic regions' });
-  }
-});
-
-// Bulk update landmark regions
-app.post('/api/admin/landmarks/update-regions', async (req, res) => {
-  try {
-    const landmarks = await Landmark.find({});
-    let updated = 0;
-
-    for (const landmark of landmarks) {
-      const region = determineRegion(landmark.location.lat, landmark.location.lng);
-
-      await Landmark.findByIdAndUpdate(landmark._id, {
+      data: {
+        landmarks: nearbyLandmarks,
+        syncVersion: Math.floor(Date.now() / 1000),
         region: region,
-        lastSyncVersion: 1
-      });
-      updated++;
-    }
-
-    res.json({
-      success: true,
-      message: `Updated regions for ${updated} landmarks`
-    });
-  } catch (error) {
-    console.error('âŒ Error updating landmark regions:', error);
-    res.status(500).json({ error: 'Failed to update landmark regions' });
-  }
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-
-
-// Add these new endpoints to your existing index.js
-
-// Enhanced location endpoint with nearby data response
-app.post('/api/location/enhanced', async (req, res) => {
-  try {
-    const { latitude, longitude, userId, includeNearby = true, radius = 10000 } = req.body;
-    if (!latitude || !longitude || !userId) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    // Encrypt coordinates
-    const encryptedLat = encrypt(latitude);
-    const encryptedLng = encrypt(longitude);
-
-    // Save user location
-    const userLocation = new UserLocation({
-      userId,
-      encryptedLat,
-      encryptedLng,
-      locatedAt: new Date()
-    });
-    await userLocation.save();
-
-    // Update user's lastLocation reference and sync preferences
-    const region = determineRegion(latitude, longitude);
-    await User.findByIdAndUpdate(userId, {
-      lastLocation: userLocation._id,
-      lastOfflineSync: new Date(),
-      $addToSet: { preferredRegions: region }
-    });
-
-    let response = {
-      success: true,
-      message: 'Location saved successfully',
-      region: region,
-      locationId: userLocation._id
-    };
-
-    if (includeNearby) {
-      // Find nearby mechanics
-      const mechanics = await Mechanic.find({ isActive: true });
-      const nearbyMechanics = mechanics
-        .map(m => {
-          const mechLat = decrypt(m.location.lat);
-          const mechLng = decrypt(m.location.lng);
-          const distance = calculateDistance(latitude, longitude, mechLat, mechLng);
-          return {
-            ...m.toObject(),
-            latitude: mechLat,
-            longitude: mechLng,
-            distance
-          };
-        })
-        .filter(m => m.distance <= radius)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 10);
-
-      // Find nearby landmarks
-      const landmarks = await Landmark.find({});
-      const nearbyLandmarks = landmarks
-        .map(l => {
-          const distance = calculateDistance(latitude, longitude, l.location.lat, l.location.lng);
-          return { ...l.toObject(), distance };
-        })
-        .filter(l => l.distance <= radius)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 10);
-
-      response.nearbyMechanics = nearbyMechanics.map(m => ({
-        id: m._id,
-        username: m.username,
-        address: m.address,
-        latitude: m.latitude,
-        longitude: m.longitude,
-        organisation: m.organisation,
-        avgRating: calculateAverageRating(m.ratings),
-        ratingCount: m.ratings.length,
-        services: m.services,
-        phone: m.phone,
-        distance: Math.round(m.distance)
-      }));
-
-      response.nearbyLandmarks = nearbyLandmarks.map(l => ({
-        id: l._id,
-        name: l.name,
-        category: l.category,
-        location: l.location,
-        distance: Math.round(l.distance)
-      }));
-    }
-
-    res.json(response);
-
-  } catch (error) {
-    console.error('Error saving enhanced location:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Bulk location history for analysis
-app.get('/api/location/history/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { limit = 50, days = 7 } = req.query;
-
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - parseInt(days));
-
-    const locations = await UserLocation.find({
-      userId,
-      locatedAt: { $gte: startDate }
-    })
-    .sort({ locatedAt: -1 })
-    .limit(parseInt(limit));
-
-    const decryptedLocations = locations.map(loc => ({
-      id: loc._id,
-      latitude: decrypt(loc.encryptedLat),
-      longitude: decrypt(loc.encryptedLng),
-      timestamp: loc.locatedAt,
-      region: determineRegion(decrypt(loc.encryptedLat), decrypt(loc.encryptedLng))
-    }));
-
-    res.json({
-      locations: decryptedLocations,
-      totalCount: decryptedLocations.length
+        downloadedAt: new Date().toISOString(),
+        totalCount: nearbyLandmarks.length
+      }
     });
 
   } catch (error) {
-    console.error('Error fetching location history:', error);
-    res.status(500).json({ error: 'Failed to fetch location history' });
+    console.error('Landmark sync error:', error);
+    res.status(500).json({ error: 'Failed to sync landmarks', details: error.message });
   }
 });
 
-// Enhanced offline sync with user preferences
-app.post('/api/sync/user-preferences', async (req, res) => {
-  try {
-    const { userId, location, preferences = {} } = req.body;
-
-    if (!userId || !location) {
-      return res.status(400).json({ error: 'UserId and location required' });
-    }
-
-    const {
-      mechanicRadius = 50000,
-      landmarkRadius = 30000,
-      maxMechanics = 100,
-      maxLandmarks = 50,
-      serviceFilter = [],
-      categoryFilter = []
-    } = preferences;
-
-    // Update user preferences
-    await User.findByIdAndUpdate(userId, {
-      offlineRadius: Math.max(mechanicRadius, landmarkRadius),
-      lastOfflineSync: new Date(),
-      $addToSet: { preferredRegions: determineRegion(location.lat, location.lng) }
-    });
-
-    // Get mechanics with preferences
-    let mechanicQuery = { isActive: true };
-    if (serviceFilter.length > 0) {
-      mechanicQuery.services = { $in: serviceFilter };
-    }
-
-    const mechanics = await Mechanic.find(mechanicQuery);
-    const nearbyMechanics = mechanics
-      .map(m => {
-        try {
-          const mechLat = decrypt(m.location.lat);
-          const mechLng = decrypt(m.location.lng);
-          const distance = calculateDistance(location.lat, location.lng, mechLat, mechLng);
-
-          return {
-            _id: m._id,
-            username: m.username,
-            phone: m.phone,
-            address: m.address,
-            latitude: mechLat,
-            longitude: mechLng,
-            services: m.services,
-            ratings: m.ratings,
-            organisation: m.organisation,
-            isActive: m.isActive,
-            region: m.region || determineRegion(mechLat, mechLng),
-            priority: m.priority || 0,
-            distance: distance
-          };
-        } catch (error) {
-          console.error('Error processing mechanic:', m._id);
-          return null;
-        }
-      })
-      .filter(m => m !== null && m.distance <= mechanicRadius)
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, maxMechanics);
-
-    // Get landmarks with preferences
-    let landmarkQuery = {};
-    if (categoryFilter.length > 0) {
-      landmarkQuery.category = { $in: categoryFilter };
-    }
-
-    const landmarks = await Landmark.find(landmarkQuery);
-    const nearbyLandmarks = landmarks
-      .map(l => {
-        const distance = calculateDistance(location.lat, location.lng, l.location.lat, l.location.lng);
-        return { ...l.toObject(), distance };
-      })
-      .filter(l => l.distance <= landmarkRadius)
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, maxLandmarks);
-
-    const currentSyncVersion = Math.floor(Date.now() / 1000);
-
-    res.json({
-      success: true,
-      mechanics: nearbyMechanics,
-      landmarks: nearbyLandmarks,
-      syncVersion: currentSyncVersion,
-      region: determineRegion(location.lat, location.lng),
-      downloadedAt: new Date().toISOString(),
-      preferences: preferences
-    });
-
-  } catch (error) {
-    console.error('Error in user preference sync:', error);
-    res.status(500).json({ error: 'Failed to sync with user preferences' });
-  }
-});
-
-// Get optimal location for user (compare multiple recent locations)
-app.get('/api/location/optimal/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { timeWindow = 30 } = req.query; // minutes
-
-    const startTime = new Date();
-    startTime.setMinutes(startTime.getMinutes() - parseInt(timeWindow));
-
-    const recentLocations = await UserLocation.find({
-      userId,
-      locatedAt: { $gte: startTime }
-    }).sort({ locatedAt: -1 }).limit(10);
-
-    if (recentLocations.length === 0) {
-      return res.status(404).json({ error: 'No recent locations found' });
-    }
-
-    // Decrypt and analyze locations
-    const decryptedLocations = recentLocations.map(loc => ({
-      id: loc._id,
-      latitude: decrypt(loc.encryptedLat),
-      longitude: decrypt(loc.encryptedLng),
-      timestamp: loc.locatedAt
-    }));
-
-    // Find the most accurate/central location
-    let optimalLocation;
-    if (decryptedLocations.length === 1) {
-      optimalLocation = decryptedLocations[0];
-    } else {
-      // Calculate centroid and find closest actual location
-      const avgLat = decryptedLocations.reduce((sum, loc) => sum + loc.latitude, 0) / decryptedLocations.length;
-      const avgLng = decryptedLocations.reduce((sum, loc) => sum + loc.longitude, 0) / decryptedLocations.length;
-
-      optimalLocation = decryptedLocations.reduce((closest, loc) => {
-        const distFromCenter = calculateDistance(avgLat, avgLng, loc.latitude, loc.longitude);
-        const closestDistFromCenter = calculateDistance(avgLat, avgLng, closest.latitude, closest.longitude);
-        return distFromCenter < closestDistFromCenter ? loc : closest;
-      });
-    }
-
-    res.json({
-      optimalLocation,
-      totalLocations: decryptedLocations.length,
-      timeWindow: timeWindow,
-      region: determineRegion(optimalLocation.latitude, optimalLocation.longitude)
-    });
-
-  } catch (error) {
-    console.error('Error finding optimal location:', error);
-    res.status(500).json({ error: 'Failed to find optimal location' });
-  }
-});
-
-// Cleanup old location data (run periodically)
-app.post('/api/admin/cleanup-locations', async (req, res) => {
-  try {
-    const { daysToKeep = 30 } = req.body;
-
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const result = await UserLocation.deleteMany({
-      locatedAt: { $lt: cutoffDate }
-    });
-
-    res.json({
-      success: true,
-      deletedCount: result.deletedCount,
-      cutoffDate: cutoffDate.toISOString()
-    });
-
-  } catch (error) {
-    console.error('Error cleaning up locations:', error);
-    res.status(500).json({ error: 'Failed to cleanup old locations' });
-  }
-});
-
-// Health check with database stats
-app.get('/api/health/detailed', async (req, res) => {
+// DEBUG ENDPOINT - Check database content from laptop
+app.get('/api/debug/db-stats', async (req, res) => {
   try {
     const stats = {
-      status: 'OK',
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      database: {
+      collections: {
+        users: await User.countDocuments(),
         mechanics: await Mechanic.countDocuments(),
         activeMechanics: await Mechanic.countDocuments({ isActive: true }),
         landmarks: await Landmark.countDocuments(),
-        users: await User.countDocuments(),
+        userLocations: await UserLocation.countDocuments(),
         recentLocations: await UserLocation.countDocuments({
-          locatedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // last 24 hours
+          locatedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
         })
       }
     };
 
+    // Get recent locations for debugging
+    const recentLocations = await UserLocation.find()
+      .sort({ locatedAt: -1 })
+      .limit(10);
+
+    const locationDetails = recentLocations.map(loc => {
+      try {
+        return {
+          id: loc._id,
+          userId: loc.userId,
+          latitude: decrypt(loc.encryptedLat),
+          longitude: decrypt(loc.encryptedLng),
+          timestamp: loc.locatedAt
+        };
+      } catch (error) {
+        return {
+          id: loc._id,
+          userId: loc.userId,
+          error: 'Decryption failed',
+          timestamp: loc.locatedAt
+        };
+      }
+    });
+
+    stats.recentLocationDetails = locationDetails;
+
     res.json(stats);
+
+  } catch (error) {
+    console.error('Debug stats error:', error);
+    res.status(500).json({ error: 'Failed to get stats', details: error.message });
+  }
+});
+
+// HEALTH CHECK
+app.get('/api/health', async (req, res) => {
+  try {
+    // Test DB connection
+    await mongoose.connection.db.admin().ping();
+
+    res.json({
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: 'Connected',
+      version: '2.0'
+    });
   } catch (error) {
     res.status(500).json({
       status: 'ERROR',
@@ -817,71 +448,15 @@ app.get('/api/health/detailed', async (req, res) => {
   }
 });
 
-// Batch update locations (for bulk operations)
-app.post('/api/location/batch', async (req, res) => {
-  try {
-    const { locations } = req.body;
-
-    if (!Array.isArray(locations) || locations.length === 0) {
-      return res.status(400).json({ error: 'Locations array required' });
-    }
-
-    const results = [];
-    for (const locationData of locations) {
-      const { userId, latitude, longitude, timestamp } = locationData;
-
-      if (userId && latitude && longitude) {
-        const encryptedLat = encrypt(latitude);
-        const encryptedLng = encrypt(longitude);
-
-        const userLocation = new UserLocation({
-          userId,
-          encryptedLat,
-          encryptedLng,
-          locatedAt: timestamp ? new Date(timestamp) : new Date()
-        });
-
-        await userLocation.save();
-        results.push({
-          success: true,
-          locationId: userLocation._id,
-          userId
-        });
-      } else {
-        results.push({
-          success: false,
-          error: 'Missing required fields',
-          locationData
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      results,
-      processed: results.length,
-      successful: results.filter(r => r.success).length
-    });
-
-  } catch (error) {
-    console.error('Error in batch location save:', error);
-    res.status(500).json({ error: 'Batch operation failed' });
-  }
-});
-
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('âŒ Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error', details: err.message });
 });
-//
-// app.listen(PORT, () => {
-//   console.log(`ðŸš€ Server running on port ${PORT}`);
-//   console.log(`ðŸ“¡ Offline sync endpoints available`);
-//   console.log(`ðŸ”’ Encryption enabled for coordinates`);
-// });
-//
 
-
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
 
 export default app;
