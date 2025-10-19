@@ -1,18 +1,67 @@
 // backend/db.js
+import crypto from 'crypto';
 import mongoose from 'mongoose';
+
+// --- ENCRYPTION SETUP ---
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+const AUTH_TAG_LENGTH = 16;
+
+// Encryption helper functions
+const encrypt = (text) => {
+  if (!text) return null;
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(
+    ALGORITHM,
+    Buffer.from(ENCRYPTION_KEY, 'hex'),
+    iv
+  );
+
+  let encrypted = cipher.update(JSON.stringify(text), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+
+  return iv.toString('hex') + ':' + authTag.toString('hex') + ':' + encrypted;
+};
+
+const decrypt = (encryptedData) => {
+  if (!encryptedData) return null;
+
+  const parts = encryptedData.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const authTag = Buffer.from(parts[1], 'hex');
+  const encrypted = parts[2];
+
+  const decipher = crypto.createDecipheriv(
+    ALGORITHM,
+    Buffer.from(ENCRYPTION_KEY, 'hex'),
+    iv
+  );
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return JSON.parse(decrypted);
+};
 
 // --- SCHEMAS ---
 const userSchema = new mongoose.Schema({
   userId: { type: String, required: true, unique: true },
-  location: {
-    latitude: Number,
-    longitude: Number,
-    accuracy: Number,
-    timestamp: Date
-  },
+  encryptedLocation: { type: String }, // Encrypted location data
   landmarks: [String],
   lastUpdated: { type: Date, default: Date.now }
 });
+
+// Virtual field to decrypt location when accessed
+userSchema.virtual('location').get(function() {
+  return this.encryptedLocation ? decrypt(this.encryptedLocation) : null;
+});
+
+// Ensure virtuals are included in JSON output
+userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toObject', { virtuals: true });
 
 const mechanicSchema = new mongoose.Schema({
   name: String,
@@ -47,15 +96,19 @@ export const connectDB = async () => {
 // --- FUNCTIONS ---
 export const updateUserLocation = async (userId, location, landmarks = []) => {
   await connectDB();
+
+  // Encrypt the location data
+  const encryptedLocation = encrypt({
+    latitude: location.latitude,
+    longitude: location.longitude,
+    accuracy: location.accuracy,
+    timestamp: new Date()
+  });
+
   return await User.findOneAndUpdate(
     { userId },
     {
-      location: {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        accuracy: location.accuracy,
-        timestamp: new Date()
-      },
+      encryptedLocation,
       landmarks,
       lastUpdated: new Date()
     },
@@ -78,13 +131,23 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
 
 export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
   await connectDB();
-  const users = await User.find({
-    'location.latitude': { $gte: lat - 0.01, $lte: lat + 0.01 },
-    'location.longitude': { $gte: lng - 0.01, $lte: lng + 0.01 }
+
+  // Fetch all users and decrypt their locations for proximity check
+  const allUsers = await User.find({});
+  const nearbyUsers = allUsers.filter(user => {
+    if (!user.encryptedLocation) return false;
+
+    const location = decrypt(user.encryptedLocation);
+    if (!location) return false;
+
+    const latDiff = Math.abs(location.latitude - lat);
+    const lngDiff = Math.abs(location.longitude - lng);
+
+    return latDiff <= 0.01 && lngDiff <= 0.01;
   });
 
   const landmarks = new Set();
-  users.forEach(user => {
+  nearbyUsers.forEach(user => {
     if (user.landmarks) {
       user.landmarks.forEach(landmark => landmarks.add(landmark));
     }
@@ -95,4 +158,3 @@ export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
 
 // --- EXPORT MODELS TOO ---
 export { Mechanic, User };
-
