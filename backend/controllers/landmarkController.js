@@ -224,20 +224,24 @@ export const syncOpenStreetMapHandler = async (req, res) => {
         const osmCategory = element.tags.amenity || element.tags.tourism || element.tags.shop;
         const ourCategory = categoryMapping[osmCategory] || 'other';
 
-        const existing = await Landmark.findOne({
-          name: element.tags.name,
-          'location.coordinates': {
-            $near: {
-              $geometry: {
+        // ✅ FIXED: Use aggregate with $geoNear instead of find with $near
+        const existing = await Landmark.aggregate([
+          {
+            $geoNear: {
+              near: {
                 type: 'Point',
                 coordinates: [element.lon, element.lat]
               },
-              $maxDistance: 50
+              distanceField: 'distance',
+              maxDistance: 50,
+              query: { name: element.tags.name },
+              spherical: true
             }
-          }
-        });
+          },
+          { $limit: 1 }
+        ]);
 
-        if (existing) {
+        if (existing.length > 0) {
           duplicate++;
           continue;
         }
