@@ -25,12 +25,21 @@ import {
   getUserLocationHistory,
   updateUserLocation
 } from './db.js';
+
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+
 const limiter =rateLimit({
   windowMs: 15*60*1000,
   max:100,
   message:'Too many requests, please try again later.'
 });
 
+app.use(cors());
+app.use(express.json());
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -41,9 +50,7 @@ const authLimiter = rateLimit({
 dotenv.config();
 app.use(limiter);
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+
 
 // Database connection middleware
 app.use(async (req, res, next) => {
