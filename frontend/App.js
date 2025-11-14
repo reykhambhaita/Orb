@@ -1,103 +1,58 @@
-// App.js - Updated with authentication flow
+// App.js or your navigation file
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import authService from './src/screens/authService';
-
-// Import screens
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AuthLoadingScreen from './src/screens/AuthLoading';
 import HomeScreen from './src/screens/HomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
-    try {
-      const authenticated = await authService.isAuthenticated();
-      setIsAuthenticated(authenticated);
-
-      // Optional: Verify token is still valid
-      if (authenticated) {
-        const result = await authService.getCurrentUser();
-        if (!result.success) {
-          setIsAuthenticated(false);
-        }
-      }
-    } catch (error) {
-      console.error('Auth check error:', error);
-      setIsAuthenticated(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    );
-  }
-
   return (
     <NavigationContainer>
       <Stack.Navigator
+        initialRouteName="AuthLoading"
         screenOptions={{
-          headerStyle: {
-            backgroundColor: '#007AFF',
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
+          headerShown: false,
         }}
       >
-        {isAuthenticated ? (
-          // Authenticated screens
-          <>
-            <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{
-                title: 'ORMS Tracker',
-                headerLeft: null, // Disable back button
-              }}
-            />
-          </>
-        ) : (
-          // Auth screens
-          <>
-            <Stack.Screen
-              name="Login"
-              component={LoginScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Signup"
-              component={SignupScreen}
-              options={{ title: 'Create Account' }}
-            />
-          </>
-        )}
+        {/* Auth Loading Screen - checks if user is logged in */}
+        <Stack.Screen
+          name="AuthLoading"
+          component={AuthLoadingScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* Auth Screens */}
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Signup"
+          component={SignupScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* Main App Screens */}
+        <Stack.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{
+            headerShown: true,
+            title: 'ORMS Tracker',
+            headerStyle: {
+              backgroundColor: '#007AFF',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-});

@@ -4,6 +4,7 @@ import { Accelerometer, Gyroscope, Magnetometer } from "expo-sensors";
 import * as SQLite from "expo-sqlite";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator, // Add this
   Alert,
   Platform,
   ScrollView,
@@ -71,7 +72,7 @@ const NOISE_MAP = {
   deadReckoning: 0.1,
 };
 
-const MultiModalLocationTracker = () => {
+const MultiModalLocationTracker = ({ onLocationUpdate }) => {
   const [currentLocation, setCurrentLocation] = useState({
     latitude: null,
     longitude: null,
@@ -93,7 +94,7 @@ const MultiModalLocationTracker = () => {
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [connectionTest, setConnectionTest] = useState(null);
   const [user, setUser] = useState(null);
-
+  const [initStatus, setInitStatus] = useState('Initializing...');
   const kalmanLat = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lat));
   const kalmanLng = useRef(new KalmanFilter(0.001, 0.01, RAJKOT_COORDS.lng));
   const bleManager = useRef(null);
@@ -193,6 +194,9 @@ const MultiModalLocationTracker = () => {
       setConnectionTest(`Error: ${error.message}`);
     }
   };
+
+
+
 
   // ---------- DB helpers ----------
   const initializeDatabase = async () => {
@@ -360,7 +364,7 @@ const MultiModalLocationTracker = () => {
         return;
       }
       setPermissionGranted(true);
-
+      setInitStatus('Getting initial GPS fix...');
       try {
         const initialLocation = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
@@ -375,9 +379,25 @@ const MultiModalLocationTracker = () => {
             longitude,
             accuracy: accuracy || 100,
           });
+
+          setInitStatus('Location ready.');
+
+
+          if (onLocationUpdate) {
+            onLocationUpdate({
+              latitude,
+              longitude,
+              accuracy: accuracy || 100,
+            });
+          }
+
+
+
+
         }
       } catch (e) {
         console.log("No initial GPS:", e);
+        setInitStatus('No GPS fix yet, using defaults.');
       }
 
       netInfoUnsubscribe.current = NetInfo.addEventListener((state) => {
@@ -628,6 +648,7 @@ const MultiModalLocationTracker = () => {
     subscriptions.current.fusion = setInterval(fuseLocationData, 1000);
   };
 
+
   const fuseLocationData = () => {
     const sources = Object.values(locationSources).filter(
       (source) =>
@@ -638,30 +659,37 @@ const MultiModalLocationTracker = () => {
         !isNaN(source.longitude)
     );
     if (sources.length === 0) return;
+
     sources.sort((a, b) => {
       const accuracyDiff = (a.accuracy || 100) - (b.accuracy || 100);
       const timeDiff = (b.timestamp - a.timestamp) / 1000;
       return accuracyDiff + timeDiff * 10;
     });
+
     const primarySource = sources[0];
     const noise = NOISE_MAP[primarySource.source] || 0.05;
     kalmanLat.current.setMeasurementNoise(noise);
     kalmanLng.current.setMeasurementNoise(noise);
+
     let filteredLat = kalmanLat.current.update(primarySource.latitude);
     let filteredLng = kalmanLng.current.update(primarySource.longitude);
+
     if (sources.length > 1) {
       let totalWeight = 1 / (primarySource.accuracy || 10);
       let weightedLat = filteredLat * totalWeight;
       let weightedLng = filteredLng * totalWeight;
+
       sources.slice(1, 3).forEach((source) => {
         const weight = 1 / ((source.accuracy || 10) * 2);
         totalWeight += weight;
         weightedLat += source.latitude * weight;
         weightedLng += source.longitude * weight;
       });
+
       filteredLat = weightedLat / totalWeight;
       filteredLng = weightedLng / totalWeight;
     }
+
     const fusedLocation = {
       latitude: filteredLat,
       longitude: filteredLng,
@@ -670,9 +698,15 @@ const MultiModalLocationTracker = () => {
           ? Math.max(5, primarySource.accuracy * 0.8)
           : primarySource.accuracy,
     };
+
     setCurrentLocation(fusedLocation);
     sensorData.current.lastPosition = { lat: filteredLat, lng: filteredLng };
     saveLocationLocally(fusedLocation);
+
+    // NEW: Pass location to parent component
+    if (onLocationUpdate) {
+      onLocationUpdate(fusedLocation);
+    }
   };
 
   const cleanup = () => {
@@ -706,6 +740,14 @@ const MultiModalLocationTracker = () => {
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
     >
+
+
+      {(!currentLocation?.latitude || !currentLocation?.longitude) && (
+        <View style={[styles.card, styles.statusCard]}>
+          <Text style={styles.statusTitle}>📍 {initStatus}</Text>
+          <ActivityIndicator size="small" color="#007AFF" />
+        </View>
+      )}
       <Text style={styles.title}>Multi-Modal Location Tracker</Text>
 
       {/* User Info Card */}

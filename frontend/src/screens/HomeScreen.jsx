@@ -1,9 +1,14 @@
 // src/screens/HomeScreen.jsx
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import LandmarkManager from '../components/landmarks/LandmarkManager';
 import MultiModalLocationTracker from '../components/location/MultiModalLocationTracker';
+import MechanicFinder from '../components/mechanics/MechanicFinder';
 import authService from '../screens/authService';
 
 const HomeScreen = ({ navigation }) => {
+  const [currentLocation, setCurrentLocation] = useState(null);
+
   const handleLogout = async () => {
     Alert.alert(
       'Logout',
@@ -29,9 +34,31 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
+  const handleLocationUpdate = (location) => {
+    setCurrentLocation(location);
+  };
+
+  const handleLandmarkAdded = (landmark) => {
+    console.log('Landmark added:', landmark);
+  };
+
   return (
     <View style={styles.container}>
-      <MultiModalLocationTracker />
+      <ScrollView style={styles.scrollView}>
+        <MultiModalLocationTracker
+          onLocationUpdate={handleLocationUpdate}
+        />
+
+        {/* NEW: Mechanic Finder Component */}
+        <MechanicFinder
+          currentLocation={currentLocation}
+        />
+
+        <LandmarkManager
+          currentLocation={currentLocation}
+          onLandmarkAdded={handleLandmarkAdded}
+        />
+      </ScrollView>
 
       <TouchableOpacity
         style={styles.logoutButton}
@@ -45,6 +72,10 @@ const HomeScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
     flex: 1,
   },
   logoutButton: {

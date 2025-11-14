@@ -19,10 +19,15 @@ const SignupScreen = ({ navigation }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('user');
+
+  // NEW: Mechanic-specific fields
+  const [mechanicName, setMechanicName] = useState('');
+  const [mechanicPhone, setMechanicPhone] = useState('');
+
   const [loading, setLoading] = useState(false);
 
   const handleSignup = async () => {
-    // Validation
     if (!email || !username || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -38,12 +43,34 @@ const SignupScreen = ({ navigation }) => {
       return;
     }
 
+    // Validate mechanic fields if role is mechanic
+    if (role === 'mechanic') {
+      if (!mechanicName || !mechanicPhone) {
+        Alert.alert('Error', 'Please provide your name and phone number');
+        return;
+      }
+      if (mechanicPhone.length < 10) {
+        Alert.alert('Error', 'Please provide a valid phone number');
+        return;
+      }
+    }
+
+
     setLoading(true);
-    const result = await authService.signup(email, username, password);
+
+    // NEW: Prepare mechanic data if applicable
+    const mechanicData = role === 'mechanic' ? {
+      name: mechanicName,
+      phone: mechanicPhone,
+      specialties: [],
+      available: true
+    } : undefined;
+
+    const result = await authService.signup(email, username, password, role, mechanicData);
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Account created successfully!');
+      console.log('Signup successful:', result.user);
       navigation.replace('Home');
     } else {
       Alert.alert('Signup Failed', result.error);
@@ -96,6 +123,76 @@ const SignupScreen = ({ navigation }) => {
             secureTextEntry
             editable={!loading}
           />
+
+          {/* Role Selection */}
+          <View style={styles.roleContainer}>
+            <Text style={styles.roleLabel}>I am a:</Text>
+            <View style={styles.roleButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.roleButton,
+                  role === 'user' && styles.roleButtonActive,
+                ]}
+                onPress={() => setRole('user')}
+                disabled={loading}
+              >
+                <Text
+                  style={[
+                    styles.roleButtonText,
+                    role === 'user' && styles.roleButtonTextActive,
+                  ]}
+                >
+                  👤 User
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.roleButton,
+                  role === 'mechanic' && styles.roleButtonActive,
+                ]}
+                onPress={() => setRole('mechanic')}
+                disabled={loading}
+              >
+                <Text
+                  style={[
+                    styles.roleButtonText,
+                    role === 'mechanic' && styles.roleButtonTextActive,
+                  ]}
+                >
+                  🔧 Mechanic
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* NEW: Mechanic-specific fields */}
+          {role === 'mechanic' && (
+            <View style={styles.mechanicFields}>
+              <Text style={styles.sectionTitle}>Mechanic Profile</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                value={mechanicName}
+                onChangeText={setMechanicName}
+                editable={!loading}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Phone Number"
+                value={mechanicPhone}
+                onChangeText={setMechanicPhone}
+                keyboardType="phone-pad"
+                editable={!loading}
+              />
+
+              <Text style={styles.helperText}>
+                📍 Your location will be set when you start the app
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -158,6 +255,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  roleContainer: {
+    marginBottom: 20,
+  },
+  roleLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 10,
+    color: '#333',
+  },
+  roleButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  roleButton: {
+    flex: 1,
+    padding: 15,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  roleButtonActive: {
+    borderColor: '#007AFF',
+    backgroundColor: '#E3F2FD',
+  },
+  roleButtonText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  roleButtonTextActive: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  mechanicFields: {
+    backgroundColor: '#E3F2FD',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 15,
+    color: '#007AFF',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginTop: -5,
   },
   button: {
     backgroundColor: '#007AFF',
