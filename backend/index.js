@@ -26,31 +26,40 @@ import {
   updateUserLocation
 } from './db.js';
 
+dotenv.config();
 
 const app = express();
+
+// ============================================
+// CRITICAL: Enable trust proxy BEFORE any middleware
+// This fixes the rate limiter X-Forwarded-For errors
+// ============================================
+app.set('trust proxy', true);
+
+// Basic middleware
 app.use(cors());
 app.use(express.json());
 
-
-const limiter =rateLimit({
-  windowMs: 15*60*1000,
-  max:100,
-  message:'Too many requests, please try again later.'
+// Rate limiters with proper proxy configuration
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: 'Too many requests, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
-
-app.use(cors());
-app.use(express.json());
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
   message: 'Too many authentication attempts, please try again later.',
-  skipSuccessfulRequests:true
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-dotenv.config();
+
+// Apply global rate limiter
 app.use(limiter);
-
-
 
 // Database connection middleware
 app.use(async (req, res, next) => {
@@ -92,8 +101,8 @@ app.get('/api/health', (req, res) => {
 
 // === AUTH ROUTES ===
 
-app.post('/api/auth/signup',authLimiter, signup);
-app.post('/api/auth/login',authLimiter, login);
+app.post('/api/auth/signup', authLimiter, signup);
+app.post('/api/auth/login', authLimiter, login);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
