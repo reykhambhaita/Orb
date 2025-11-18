@@ -1,5 +1,4 @@
 // backend/index.js
-// CHANGES: Removed syncOpenStreetMapHandler route
 
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -27,31 +26,36 @@ import {
   updateUserLocation
 } from './db.js';
 
+dotenv.config();
 
 const app = express();
+
+// IMPORTANT: Enable trust proxy BEFORE rate limiters
+// This is required when running behind a proxy (AWS Lambda, nginx, etc.)
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 
-
-const limiter =rateLimit({
-  windowMs: 15*60*1000,
-  max:100,
-  message:'Too many requests, please try again later.'
+// Rate limiters configuration
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: 'Too many requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-
-app.use(cors());
-app.use(express.json());
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
   message: 'Too many authentication attempts, please try again later.',
-  skipSuccessfulRequests:true
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-dotenv.config();
+
 app.use(limiter);
-
-
 
 // Database connection middleware
 app.use(async (req, res, next) => {
@@ -93,8 +97,8 @@ app.get('/api/health', (req, res) => {
 
 // === AUTH ROUTES ===
 
-app.post('/api/auth/signup',authLimiter, signup);
-app.post('/api/auth/login',authLimiter, login);
+app.post('/api/auth/signup', authLimiter, signup);
+app.post('/api/auth/login', authLimiter, login);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===
