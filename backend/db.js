@@ -380,7 +380,10 @@ export const createMechanicProfile = async (userId, mechanicData) => {
     phone: mechanicData.phone,
     location: {
       type: 'Point',
-      coordinates: [mechanicData.longitude, mechanicData.latitude]
+      coordinates: [
+        Number(mechanicData.longitude),
+        Number(mechanicData.latitude)
+      ]
     },
     specialties: mechanicData.specialties || [],
     available: mechanicData.available !== undefined ? mechanicData.available : true
