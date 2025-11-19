@@ -4,11 +4,11 @@ import mongoose from 'mongoose';
 
 // --- ENCRYPTION SETUP ---
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
-if(!ENCRYPTION_KEY){
+if (!ENCRYPTION_KEY) {
   console.error("ENCRYPTION_KEY is not defined in environment variables");
   process.exit(1);
 }
-if(Buffer.from(ENCRYPTION_KEY, 'hex').length !== 32){
+if (Buffer.from(ENCRYPTION_KEY, 'hex').length !== 32) {
   console.error("ENCRYPTION_KEY must be 32 bytes (64 hex characters) long");
   process.exit(1);
 }
@@ -98,7 +98,7 @@ const locationHistorySchema = new mongoose.Schema({
   synced: { type: Boolean, default: true }
 });
 
-locationHistorySchema.virtual('location').get(function() {
+locationHistorySchema.virtual('location').get(function () {
   return this.encryptedLocation ? decrypt(this.encryptedLocation) : null;
 });
 
@@ -294,19 +294,21 @@ export const getUserLocationHistory = async (userId, limit = 50) => {
 export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   await connectDB();
 
-  console.log('🔍 Searching mechanics:', { lat, lng, radius });
+  console.log('🔍 [getNearbyMechanics] Searching mechanics:', { lat, lng, radius });
+  console.log('🔍 [getNearbyMechanics] Query coordinates: [lng, lat] =', [lng, lat]);
 
   // First, check if any mechanics exist at all
   const totalMechanics = await Mechanic.countDocuments({ available: true });
-  console.log('📊 Total available mechanics:', totalMechanics);
+  console.log('📊 [getNearbyMechanics] Total available mechanics:', totalMechanics);
 
   if (totalMechanics === 0) {
-    console.log('❌ No mechanics in database!');
+    console.log('❌ [getNearbyMechanics] No mechanics in database!');
     return [];
   }
 
   // Try geospatial query
   try {
+    console.log('🔍 [getNearbyMechanics] Attempting geospatial query...');
     const mechanics = await Mechanic.find({
       location: {
         $near: {
@@ -316,23 +318,32 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
       },
       available: true
     })
-    .populate('userId', 'username email')
-    .limit(20);
+      .populate('userId', 'username email')
+      .limit(20);
 
-    console.log('✅ Found mechanics (geospatial):', mechanics.length);
+    console.log('✅ [getNearbyMechanics] Geospatial query found:', mechanics.length, 'mechanics');
 
     if (mechanics.length > 0) {
+      // Log each mechanic found
+      mechanics.forEach((m, idx) => {
+        console.log(`   ${idx + 1}. ${m.name} at [${m.location.coordinates[0]}, ${m.location.coordinates[1]}]`);
+      });
       return mechanics;
     }
+
+    console.log('⚠️ [getNearbyMechanics] Geospatial query returned 0 results, trying fallback...');
   } catch (error) {
-    console.error('⚠️ Geospatial query failed:', error.message);
+    console.error('⚠️ [getNearbyMechanics] Geospatial query failed:', error.message);
+    console.log('⚠️ [getNearbyMechanics] Falling back to manual distance calculation...');
   }
 
   // FALLBACK: Manual distance calculation
-  console.log('⚠️ Falling back to manual distance calculation...');
+  console.log('⚠️ [getNearbyMechanics] Using fallback: manual distance calculation...');
 
   const allMechanics = await Mechanic.find({ available: true })
     .populate('userId', 'username email');
+
+  console.log('📊 [getNearbyMechanics] Retrieved all mechanics for manual calculation:', allMechanics.length);
 
   const mechanicsWithDistance = allMechanics.map(mechanic => {
     const mechLat = mechanic.location.coordinates[1];
@@ -349,7 +360,7 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const distance = R * c;
 
-    console.log(`Distance to ${mechanic.name}: ${(distance/1000).toFixed(2)}km`);
+    console.log(`   Distance to ${mechanic.name}: ${(distance / 1000).toFixed(2)}km (${distance.toFixed(0)}m)`);
 
     return { mechanic, distance };
   });
@@ -360,7 +371,14 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
     .slice(0, 20)
     .map(({ mechanic }) => mechanic);
 
-  console.log('✅ Found mechanics (fallback):', nearby.length);
+  console.log('✅ [getNearbyMechanics] Found mechanics (fallback):', nearby.length);
+
+  // If still no results but mechanics exist, return all mechanics (for debugging)
+  if (nearby.length === 0 && totalMechanics > 0) {
+    console.log('⚠️ [getNearbyMechanics] No mechanics within radius, but mechanics exist in DB');
+    console.log('⚠️ [getNearbyMechanics] Returning all available mechanics for debugging');
+    return allMechanics.slice(0, 20);
+  }
 
   return nearby;
 };
