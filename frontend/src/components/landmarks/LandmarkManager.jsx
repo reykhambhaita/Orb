@@ -36,7 +36,8 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   const [category, setCategory] = useState('other');
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
 
-  const db = SQLite.openDatabaseSync('locationtracker.db');
+  // FIX: Use the synchronous API properly
+  const [db, setDb] = useState(null);
 
   // Monitor network status
   useEffect(() => {
@@ -46,6 +47,35 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const initDb = async () => {
+      try {
+        const database = await SQLite.openDatabaseAsync('locationtracker.db');
+
+        // CREATE TABLE IF NOT EXISTS - this fixes the error
+        await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS landmarks (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          category TEXT,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          timestamp INTEGER NOT NULL,
+          synced INTEGER DEFAULT 1
+        );
+        CREATE INDEX IF NOT EXISTS idx_landmarks_location ON landmarks(latitude, longitude);
+      `);
+
+        setDb(database);
+      } catch (error) {
+        console.error('Failed to open database:', error);
+      }
+    };
+    initDb();
+  }, []);
+
 
   // Get current user ID
   useEffect(() => {
@@ -60,13 +90,13 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
   // Auto-load landmarks
   useEffect(() => {
-    if (currentLocation?.latitude && currentLocation?.longitude) {
+    if (currentLocation?.latitude && currentLocation?.longitude && db) {
       loadLandmarks();
     }
-  }, [currentLocation?.latitude, currentLocation?.longitude]);
+  }, [currentLocation?.latitude, currentLocation?.longitude, db]);
 
   const loadLandmarks = async () => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude) return;
+    if (!currentLocation?.latitude || !currentLocation?.longitude || !db) return;
 
     setLoading(true);
 
@@ -117,6 +147,8 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   };
 
   const getCachedLandmarks = async (latitude, longitude) => {
+    if (!db) return [];
+
     try {
       const latDelta = 10 / 111.32;
       const lngDelta = 10 / (111.32 * Math.cos(latitude * Math.PI / 180));
@@ -142,7 +174,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   };
 
   const cacheLandmarks = async (landmarks) => {
-    if (!landmarks || landmarks.length === 0) return;
+    if (!db || !landmarks || landmarks.length === 0) return;
 
     try {
       const now = Date.now();
@@ -173,6 +205,11 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
     if (!currentLocation?.latitude || !currentLocation?.longitude) {
       Alert.alert('Error', 'GPS location not available');
+      return;
+    }
+
+    if (!db) {
+      Alert.alert('Error', 'Database not ready');
       return;
     }
 
@@ -238,11 +275,16 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
       loadLandmarks();
     } catch (error) {
       console.error('Add landmark error:', error);
-      Alert.alert('Error', 'Failed to save landmark');
+      Alert.alert('Error', `Failed to save landmark: ${error.message}`);
     }
   };
 
   const handleDeleteLandmark = async (landmarkId, landmarkName) => {
+    if (!db) {
+      Alert.alert('Error', 'Database not ready');
+      return;
+    }
+
     Alert.alert(
       'Delete Landmark',
       `Delete "${landmarkName}"?`,
@@ -268,7 +310,8 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
               Alert.alert('Success', 'Landmark deleted');
               loadLandmarks();
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete landmark');
+              console.error('Delete landmark error:', error);
+              Alert.alert('Error', `Failed to delete landmark: ${error.message}`);
             }
           }
         }
@@ -298,9 +341,9 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
         )}
 
         <TouchableOpacity
-          style={[styles.button, !hasLocation && styles.buttonDisabled]}
+          style={[styles.button, (!hasLocation || !db) && styles.buttonDisabled]}
           onPress={() => setModalVisible(true)}
-          disabled={!hasLocation}
+          disabled={!hasLocation || !db}
         >
           <Text style={styles.buttonText}>➕ Add Landmark</Text>
         </TouchableOpacity>

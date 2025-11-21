@@ -31,7 +31,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
     setLoading(true);
 
     try {
-      console.log('🔍 Loading mechanics...');
+      console.log('ðŸ” Loading mechanics...');
 
       // Load from cache first
       const cached = await getCachedMechanics(
@@ -39,7 +39,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
         currentLocation.longitude
       );
 
-      console.log('📦 Cached mechanics:', cached.length);
+      console.log('ðŸ“¦ Cached mechanics:', cached.length);
 
       if (cached.length > 0) {
         const mechanicsWithDistance = cached.map(mechanic => ({
@@ -66,10 +66,10 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
         50000 // 50km radius for testing
       );
 
-      console.log('🌐 Backend result:', result);
+      console.log('ðŸŒ Backend result:', result);
 
       if (result.success && result.data) {
-        console.log('✅ Found mechanics:', result.data.length);
+        console.log('âœ… Found mechanics:', result.data.length);
 
         // Cache to SQLite
         await cacheMechanics(result.data);
@@ -101,7 +101,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
           onMechanicsUpdate(mechanicsWithDistance);
         }
       } else {
-        console.log('❌ Failed to load mechanics:', result.error);
+        console.log('âŒ Failed to load mechanics:', result.error);
       }
     } catch (error) {
       console.error('Load mechanics error:', error);
@@ -133,16 +133,17 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
   };
 
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+    const R = 6371;
+    const toRad = (d) => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
+
+  // Update loadMechanics - replace mechanicsWithDistance mapping:
+
 
   const getCachedMechanics = async (latitude, longitude) => {
     try {
@@ -233,11 +234,11 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>🔧 Find Mechanics</Text>
+      <Text style={styles.title}>Find Mechanics</Text>
 
       {!hasLocation && (
         <View style={styles.warningBanner}>
-          <Text style={styles.warningText}>⏳ Waiting for GPS...</Text>
+          <Text style={styles.warningText}>Waiting for GPS...</Text>
         </View>
       )}
 
@@ -260,11 +261,11 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
               <View key={mechanic.id || mechanic._id || index} style={styles.mechanicCard}>
                 <View style={styles.mechanicHeader}>
                   <View style={styles.mechanicInfo}>
-                    <Text style={styles.mechanicName}>🔧 {mechanic.name}</Text>
+                    <Text style={styles.mechanicName}>{mechanic.name}</Text>
                     <View style={styles.ratingRow}>
-                      <Text style={styles.rating}>⭐ {mechanic.rating?.toFixed(1) || 'New'}</Text>
+                      <Text style={styles.rating}>â­ {mechanic.rating?.toFixed(1) || 'New'}</Text>
                       {mechanic.available && (
-                        <Text style={styles.availableBadge}>✅ Available</Text>
+                        <Text style={styles.availableBadge}>Available</Text>
                       )}
                     </View>
                   </View>
@@ -281,8 +282,13 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
 
                 <View style={styles.distanceRow}>
                   <Text style={styles.distanceText}>
-                    📍 {mechanic.distanceFromUser?.toFixed(2) || 'N/A'} km away
+                    📍 {mechanic.distanceFromUser != null
+                      ? mechanic.distanceFromUser < 1
+                        ? `${(mechanic.distanceFromUser * 1000).toFixed(0)}m away`
+                        : `${mechanic.distanceFromUser.toFixed(2)}km away`
+                      : 'Distance unknown'}
                   </Text>
+
                 </View>
 
                 <TouchableOpacity
@@ -290,7 +296,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
                   onPress={() => handleCallMechanic(mechanic.phone)}
                 >
                   <Text style={styles.callButtonText}>
-                    📞 Call {mechanic.phone || 'N/A'}
+                    Call {mechanic.phone || 'N/A'}
                   </Text>
                 </TouchableOpacity>
               </View>
