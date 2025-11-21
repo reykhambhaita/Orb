@@ -239,7 +239,7 @@ export const connectDB = async () => {
       throw new Error('MONGODB_URI environment variable is not set');
     }
 
-    console.log('ðŸ”Œ Creating new MongoDB connection...');
+    console.log('Creating new MongoDB connection...');
 
     await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,

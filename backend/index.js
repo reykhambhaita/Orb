@@ -132,7 +132,6 @@ app.get('/api/user/location-history', authenticateToken, async (req, res) => {
 
 // === LANDMARK ROUTES ===
 
-// Get nearby landmarks (public with optional auth)
 app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);
 
 // Create a new landmark (authenticated users)
