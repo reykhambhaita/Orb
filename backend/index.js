@@ -20,6 +20,17 @@ import {
   updateMechanicLocationHandler
 } from './controllers/mechanicController.js';
 import {
+  capturePayPalPaymentHandler,
+  createPayPalOrderHandler,
+  getPaymentHistoryHandler
+} from './controllers/paymentController.js';
+import {
+  createReviewHandler,
+  getMechanicReviewsHandler,
+  getMyReviewsHandler
+} from './controllers/reviewController.js';
+import {
+  CallLog,
   connectDB,
   getLandmarksNearLocation,
   getUserLocationHistory,
@@ -191,6 +202,109 @@ app.patch(
 );
 
 app.get('/api/mechanics/nearby', optionalAuth, getNearbyMechanicsHandler);
+
+
+
+// === REVIEW ROUTES ===
+app.post('/api/reviews', authenticateToken, createReviewHandler);
+app.get('/api/reviews/mechanic/:mechanicId', getMechanicReviewsHandler);
+app.get('/api/reviews/my-reviews', authenticateToken, getMyReviewsHandler);
+
+// === PAYMENT ROUTES ===
+app.post('/api/payments/create-order', authenticateToken, createPayPalOrderHandler);
+app.post('/api/payments/capture', authenticateToken, capturePayPalPaymentHandler);
+app.get('/api/payments/history', authenticateToken, getPaymentHistoryHandler);
+
+
+
+// === CALL LOG ROUTES ===
+app.post('/api/call-logs', authenticateToken, async (req, res) => {
+  try {
+    const { mechanicId, phoneNumber, callStartTime } = req.body;
+
+    if (!mechanicId || !phoneNumber || !callStartTime) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const callLog = new CallLog({
+      userId: req.userId,
+      mechanicId,
+      phoneNumber,
+      callStartTime: new Date(callStartTime),
+      createdAt: new Date()
+    });
+
+    await callLog.save();
+
+    res.status(201).json({
+      success: true,
+      data: { id: callLog._id }
+    });
+  } catch (error) {
+    console.error('Create call log error:', error);
+    res.status(500).json({ error: 'Failed to create call log' });
+  }
+});
+
+app.patch('/api/call-logs/:id/end', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { callEndTime } = req.body;
+
+    const callLog = await CallLog.findById(id);
+    if (!callLog) {
+      return res.status(404).json({ error: 'Call log not found' });
+    }
+
+    if (callLog.userId.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    callLog.callEndTime = new Date(callEndTime);
+    callLog.duration = Math.round((callLog.callEndTime - callLog.callStartTime) / 1000);
+    await callLog.save();
+
+    res.json({
+      success: true,
+      data: { duration: callLog.duration }
+    });
+  } catch (error) {
+    console.error('End call log error:', error);
+    res.status(500).json({ error: 'Failed to update call log' });
+  }
+});
+
+app.get('/api/call-logs/pending-reviews', authenticateToken, async (req, res) => {
+  try {
+    const pendingCalls = await CallLog.find({
+      userId: req.userId,
+      reviewed: false,
+      callEndTime: { $exists: true }
+    })
+      .populate('mechanicId', 'name phone rating')
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const transformedCalls = pendingCalls.map(call => ({
+      id: call._id,
+      mechanicId: call.mechanicId._id,
+      mechanicName: call.mechanicId.name,
+      mechanicPhone: call.mechanicId.phone,
+      mechanicRating: call.mechanicId.rating,
+      duration: call.duration,
+      callStartTime: call.callStartTime,
+      callEndTime: call.callEndTime
+    }));
+
+    res.json({
+      success: true,
+      data: transformedCalls
+    });
+  } catch (error) {
+    console.error('Get pending reviews error:', error);
+    res.status(500).json({ error: 'Failed to get pending reviews' });
+  }
+});
 
 // === ERROR HANDLING ===
 

@@ -202,11 +202,137 @@ const landmarkSchema = new mongoose.Schema({
 landmarkSchema.index({ location: '2dsphere' });
 landmarkSchema.index({ category: 1 });
 
+
+
+
+// Review Schema
+const reviewSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  mechanicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Mechanic',
+    required: true,
+    index: true
+  },
+  rating: {
+    type: Number,
+    required: true,
+    min: 1,
+    max: 5
+  },
+  comment: {
+    type: String,
+    default: ''
+  },
+  callDuration: {
+    type: Number,
+    default: 0
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+reviewSchema.index({ userId: 1, mechanicId: 1 }, { unique: true });
+
+
+const paymentSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  mechanicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Mechanic',
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  },
+  paypalOrderId: {
+    type: String,
+    required: true
+  },
+  paypalCaptureId: {
+    type: String
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  description: {
+    type: String,
+    default: ''
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  completedAt: {
+    type: Date
+  }
+});
+
+
+// Call Log Schema (for tracking calls for reviews)
+const callLogSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
+  mechanicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Mechanic',
+    required: true
+  },
+  phoneNumber: {
+    type: String,
+    required: true
+  },
+  callStartTime: {
+    type: Date,
+    required: true
+  },
+  callEndTime: {
+    type: Date
+  },
+  duration: {
+    type: Number, // in seconds
+    default: 0
+  },
+  reviewed: {
+    type: Boolean,
+    default: false
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+callLogSchema.index({ userId: 1, mechanicId: 1, reviewed: 1 });
+
+
 // --- MODELS ---
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const LocationHistory = mongoose.models.LocationHistory || mongoose.model('LocationHistory', locationHistorySchema);
 const Mechanic = mongoose.models.Mechanic || mongoose.model('Mechanic', mechanicSchema);
 const Landmark = mongoose.models.Landmark || mongoose.model('Landmark', landmarkSchema);
+const Review = mongoose.models.Review || mongoose.model('Review', reviewSchema);
+const Payment = mongoose.models.Payment || mongoose.model('Payment', paymentSchema);
+const CallLog = mongoose.models.CallLog || mongoose.model('CallLog', callLogSchema);
 
 // --- CONNECTION ---
 let cachedConnection = null;
@@ -490,4 +616,5 @@ export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
   return Array.from(landmarks);
 };
 
-export { Landmark, LocationHistory, Mechanic, User };
+export { CallLog, Landmark, LocationHistory, Mechanic, Payment, Review, User };
+
