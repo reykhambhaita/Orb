@@ -1,6 +1,7 @@
 // src/components/mechanics/MechanicFinder.jsx
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SQLite from 'expo-sqlite';
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +14,9 @@ import {
 } from 'react-native';
 import authService from '../../screens/authService.js';
 
-const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
+
+
+const MechanicFinder = forwardRef(({ currentLocation, onMechanicsUpdate, navigation }, ref) => {
   const [loading, setLoading] = useState(false);
   const [mechanics, setMechanics] = useState([]);
 
@@ -31,7 +34,10 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
     setLoading(true);
 
     try {
-      console.log('ðŸ” Loading mechanics...');
+      console.log('📍 Loading mechanics from location:', {
+        lat: currentLocation.latitude,
+        lng: currentLocation.longitude
+      });
 
       // Load from cache first
       const cached = await getCachedMechanics(
@@ -39,18 +45,23 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
         currentLocation.longitude
       );
 
-      console.log('ðŸ“¦ Cached mechanics:', cached.length);
+      console.log('💾 Cached mechanics:', cached.length);
 
       if (cached.length > 0) {
-        const mechanicsWithDistance = cached.map(mechanic => ({
-          ...mechanic,
-          distanceFromUser: calculateDistance(
+        const mechanicsWithDistance = cached.map(mechanic => {
+          const distance = calculateDistance(
             currentLocation.latitude,
             currentLocation.longitude,
             mechanic.latitude,
             mechanic.longitude
-          )
-        }));
+          );
+
+          return {
+            ...mechanic,
+            distanceFromUser: distance
+          };
+        }).filter(m => m.distanceFromUser !== null);
+
         mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
 
         setMechanics(mechanicsWithDistance);
@@ -63,45 +74,52 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
       const result = await authService.getNearbyMechanics(
         currentLocation.latitude,
         currentLocation.longitude,
-        50000 // 50km radius for testing
+        50000 // 50km radius
       );
 
-      console.log('ðŸŒ Backend result:', result);
+      console.log('📡 Backend result:', result);
 
       if (result.success && result.data) {
-        console.log('âœ… Found mechanics:', result.data.length);
+        console.log('✅ Found mechanics:', result.data.length);
 
         // Cache to SQLite
         await cacheMechanics(result.data);
 
-        // Calculate distances
+        // Calculate distances with detailed logging
         const mechanicsWithDistance = result.data.map(mechanic => {
           const lat = mechanic.location?.latitude || mechanic.latitude;
           const lng = mechanic.location?.longitude || mechanic.longitude;
 
-          console.log('Mechanic location:', { name: mechanic.name, lat, lng });
+          console.log(`Mechanic "${mechanic.name}": lat=${lat}, lng=${lng}`);
+
+          const distance = calculateDistance(
+            currentLocation.latitude,
+            currentLocation.longitude,
+            lat,
+            lng
+          );
 
           return {
             ...mechanic,
             latitude: lat,
             longitude: lng,
-            distanceFromUser: calculateDistance(
-              currentLocation.latitude,
-              currentLocation.longitude,
-              lat,
-              lng
-            )
+            distanceFromUser: distance
           };
-        });
+        }).filter(m => m.distanceFromUser !== null);
 
         mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
+
+        console.log('Sorted mechanics by distance:', mechanicsWithDistance.map(m => ({
+          name: m.name,
+          distance: m.distanceFromUser?.toFixed(2) + 'km'
+        })));
 
         setMechanics(mechanicsWithDistance);
         if (onMechanicsUpdate) {
           onMechanicsUpdate(mechanicsWithDistance);
         }
       } else {
-        console.log('âŒ Failed to load mechanics:', result.error);
+        console.log('❌ Failed to load mechanics:', result.error);
       }
     } catch (error) {
       console.error('Load mechanics error:', error);
@@ -120,7 +138,8 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
           mechanic.latitude,
           mechanic.longitude
         )
-      }));
+      })).filter(m => m.distanceFromUser !== null);
+
       mechanicsWithDistance.sort((a, b) => a.distanceFromUser - b.distanceFromUser);
 
       setMechanics(mechanicsWithDistance);
@@ -132,14 +151,51 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
     }
   };
 
+  // Expose refreshMechanics method to parent via ref
+  useImperativeHandle(ref, () => ({
+    refreshMechanics: async () => {
+      console.log('🔄 Refreshing mechanics list...');
+      if (currentLocation?.latitude && currentLocation?.longitude) {
+        // Clear cached mechanics for this location to force fresh data
+        try {
+          await db.runAsync('DELETE FROM mechanics;');
+          console.log('✅ Cleared mechanic cache');
+        } catch (error) {
+          console.error('Failed to clear mechanic cache:', error);
+        }
+        // Reload mechanics
+        await loadMechanics();
+      }
+    }
+  }));
+
   const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+    // Validate inputs
+    if (!lat1 || !lon1 || !lat2 || !lon2) {
+      console.warn('Invalid coordinates for distance calculation:', { lat1, lon1, lat2, lon2 });
+      return null;
+    }
+
+    // Earth's radius in kilometers
     const R = 6371;
-    const toRad = (d) => d * Math.PI / 180;
+
+    // Convert degrees to radians
+    const toRad = (degrees) => degrees * (Math.PI / 180);
+
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // Distance in kilometers
+
+    console.log(`Distance calculated: ${distance.toFixed(2)}km between (${lat1}, ${lon1}) and (${lat2}, ${lon2})`);
+
+    return distance;
   };
 
   // Update loadMechanics - replace mechanicsWithDistance mapping:
@@ -208,8 +264,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
       console.error('Cache mechanics error:', error);
     }
   };
-
-  const handleCallMechanic = (phone) => {
+  const handleCallMechanic = (mechanicId, mechanicName, phone) => {
     if (!phone) {
       Alert.alert('No Phone Number', 'This mechanic has no contact number.');
       return;
@@ -217,17 +272,77 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
 
     Alert.alert(
       'Call Mechanic',
-      `Call ${phone}?`,
+      `Call ${mechanicName} at ${phone}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Call',
-          onPress: () => {
-            Linking.openURL(`tel:${phone}`);
+          onPress: async () => {
+            try {
+              // Log call start
+              const callStartTime = new Date();
+              const result = await authService.createCallLog(
+                mechanicId,
+                phone,
+                callStartTime
+              );
+
+              if (result.success) {
+                console.log('Call log created:', result.data.id);
+
+                // Store call log ID for ending later
+                await AsyncStorage.setItem('current_call_log_id', result.data.id);
+                await AsyncStorage.setItem('current_call_mechanic_id', mechanicId);
+                await AsyncStorage.setItem('current_call_start_time', callStartTime.toISOString());
+              }
+
+              // Make the call
+              Linking.openURL(`tel:${phone}`);
+
+              // Note: Detecting when call ends is not directly possible in React Native
+              // We'll provide a manual "End Call & Review" button instead
+            } catch (error) {
+              console.error('Call log error:', error);
+              // Still make the call even if logging fails
+              Linking.openURL(`tel:${phone}`);
+            }
           }
         }
       ]
     );
+  };
+
+  const handleEndCallAndReview = async (mechanicId, mechanicName) => {
+    try {
+      const callLogId = await AsyncStorage.getItem('current_call_log_id');
+      const storedMechanicId = await AsyncStorage.getItem('current_call_mechanic_id');
+
+      if (!callLogId || storedMechanicId !== mechanicId) {
+        // No active call for this mechanic
+        navigation.navigate('ReviewMechanic', { mechanicId, mechanicName });
+        return;
+      }
+
+      // End the call log
+      const callEndTime = new Date();
+      const result = await authService.endCallLog(callLogId, callEndTime);
+
+      // Clear stored call data
+      await AsyncStorage.removeItem('current_call_log_id');
+      await AsyncStorage.removeItem('current_call_mechanic_id');
+      await AsyncStorage.removeItem('current_call_start_time');
+
+      // Navigate to review screen
+      navigation.navigate('ReviewMechanic', {
+        mechanicId,
+        mechanicName,
+        callDuration: result.data?.duration || 0
+      });
+    } catch (error) {
+      console.error('End call error:', error);
+      // Still navigate to review screen
+      navigation.navigate('ReviewMechanic', { mechanicId, mechanicName });
+    }
   };
 
   const hasLocation = currentLocation?.latitude && currentLocation?.longitude;
@@ -263,7 +378,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
                   <View style={styles.mechanicInfo}>
                     <Text style={styles.mechanicName}>{mechanic.name}</Text>
                     <View style={styles.ratingRow}>
-                      <Text style={styles.rating}>â­ {mechanic.rating?.toFixed(1) || 'New'}</Text>
+                      <Text style={styles.rating}>⭐ {mechanic.rating?.toFixed(1) || 'New'}</Text>
                       {mechanic.available && (
                         <Text style={styles.availableBadge}>Available</Text>
                       )}
@@ -288,17 +403,47 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
                         : `${mechanic.distanceFromUser.toFixed(2)}km away`
                       : 'Distance unknown'}
                   </Text>
-
                 </View>
 
-                <TouchableOpacity
-                  style={styles.callButton}
-                  onPress={() => handleCallMechanic(mechanic.phone)}
-                >
-                  <Text style={styles.callButtonText}>
-                    Call {mechanic.phone || 'N/A'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.callButton]}
+                    onPress={() => handleCallMechanic(
+                      mechanic.id || mechanic._id,
+                      mechanic.name,
+                      mechanic.phone
+                    )}
+                  >
+                    <Text style={styles.callButtonText}>
+                      📞 Call
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.payButton]}
+                    onPress={() => navigation.navigate('Payment', {
+                      mechanicId: mechanic.id || mechanic._id,
+                      mechanicName: mechanic.name,
+                      mechanicPhone: mechanic.phone
+                    })}
+                  >
+                    <Text style={styles.payButtonText}>
+                      💳 Pay
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.reviewButton]}
+                    onPress={() => handleEndCallAndReview(
+                      mechanic.id || mechanic._id,
+                      mechanic.name
+                    )}
+                  >
+                    <Text style={styles.reviewButtonText}>
+                      ⭐ Review
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </ScrollView>
@@ -312,7 +457,7 @@ const MechanicFinder = ({ currentLocation, onMechanicsUpdate }) => {
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -429,6 +574,36 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     padding: 20,
   },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  actionButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  reviewButton: {
+    backgroundColor: '#FF9500',
+  },
+  reviewButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  payButton: {
+    backgroundColor: '#007AFF',
+  },
+  payButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+
 });
+
+MechanicFinder.displayName = 'MechanicFinder';
 
 export default MechanicFinder;

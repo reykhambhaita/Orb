@@ -36,7 +36,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   const [category, setCategory] = useState('other');
   const [nearbyLandmarks, setNearbyLandmarks] = useState([]);
 
-  // FIX: Use the synchronous API properly
+  // FIX: Use the synchronous API for consistency
   const [db, setDb] = useState(null);
 
   // Monitor network status
@@ -49,12 +49,11 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
   }, []);
 
   useEffect(() => {
-    const initDb = async () => {
-      try {
-        const database = await SQLite.openDatabaseAsync('locationtracker.db');
+    try {
+      const database = SQLite.openDatabaseSync('locationtracker.db');
 
-        // CREATE TABLE IF NOT EXISTS - this fixes the error
-        await database.execAsync(`
+      // CREATE TABLE IF NOT EXISTS - this fixes the error
+      database.execSync(`
         CREATE TABLE IF NOT EXISTS landmarks (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -68,13 +67,12 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
         CREATE INDEX IF NOT EXISTS idx_landmarks_location ON landmarks(latitude, longitude);
       `);
 
-        setDb(database);
-      } catch (error) {
-        console.error('Failed to open database:', error);
-      }
-    };
-    initDb();
+      setDb(database);
+    } catch (error) {
+      console.error('Failed to open database:', error);
+    }
   }, []);
+
 
 
   // Get current user ID
@@ -102,7 +100,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
     try {
       // First, load from cache
-      const cached = await getCachedLandmarks(
+      const cached = getCachedLandmarks(
         currentLocation.latitude,
         currentLocation.longitude
       );
@@ -123,7 +121,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
         );
 
         if (result.success && result.data) {
-          await cacheLandmarks(result.data);
+          cacheLandmarks(result.data);
           setNearbyLandmarks(result.data);
           if (onLandmarksUpdate) {
             onLandmarksUpdate(result.data);
@@ -133,7 +131,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     } catch (error) {
       console.error('Load landmarks error:', error);
       // Use cached data on error
-      const cached = await getCachedLandmarks(
+      const cached = getCachedLandmarks(
         currentLocation.latitude,
         currentLocation.longitude
       );
@@ -146,14 +144,14 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     }
   };
 
-  const getCachedLandmarks = async (latitude, longitude) => {
+  const getCachedLandmarks = (latitude, longitude) => {
     if (!db) return [];
 
     try {
       const latDelta = 10 / 111.32;
       const lngDelta = 10 / (111.32 * Math.cos(latitude * Math.PI / 180));
 
-      const result = await db.getAllAsync(
+      const result = db.getAllSync(
         `SELECT * FROM landmarks
          WHERE latitude BETWEEN ? AND ?
          AND longitude BETWEEN ? AND ?
@@ -173,7 +171,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
     }
   };
 
-  const cacheLandmarks = async (landmarks) => {
+  const cacheLandmarks = (landmarks) => {
     if (!db || !landmarks || landmarks.length === 0) return;
 
     try {
@@ -185,7 +183,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
         if (!id || !lat || !lng) continue;
 
-        await db.runAsync(
+        db.runSync(
           `INSERT OR REPLACE INTO landmarks
           (id, name, description, category, latitude, longitude, timestamp, synced)
           VALUES (?, ?, ?, ?, ?, ?, ?, 1);`,
@@ -226,7 +224,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
     try {
       // Save to local database first (offline-first approach)
-      await db.runAsync(
+      db.runSync(
         `INSERT INTO landmarks (id, name, description, category, latitude, longitude, timestamp, synced)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
         [
@@ -254,7 +252,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
 
           if (result.success) {
             // Update with server ID
-            await db.runAsync(
+            db.runSync(
               'UPDATE landmarks SET id = ?, synced = 1 WHERE id = ?;',
               [result.data.id, landmarkData.id]
             );
@@ -296,7 +294,7 @@ const LandmarkManager = ({ currentLocation, onLandmarksUpdate }) => {
           onPress: async () => {
             try {
               // Delete from local database
-              await db.runAsync('DELETE FROM landmarks WHERE id = ?;', [landmarkId]);
+              db.runSync('DELETE FROM landmarks WHERE id = ?;', [landmarkId]);
 
               // Try to delete from backend if online
               if (isOnline && !landmarkId.startsWith('offline_')) {

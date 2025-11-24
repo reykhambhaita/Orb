@@ -1,7 +1,3 @@
-// src/services/authService.js
-// CHANGES: Removed all OSM-related methods
-// Kept core landmark/mechanic CRUD
-
 import * as SecureStore from 'expo-secure-store';
 
 const API_BASE_URL = 'https://backend-three-sepia-16.vercel.app';
@@ -513,6 +509,108 @@ class AuthService {
       return { success: false, error: error.message };
     }
   }
+
+  async createReview(mechanicId, rating, comment = '', callDuration = 0) {
+    return await this.authenticatedRequest('/api/reviews', {
+      method: 'POST',
+      body: JSON.stringify({
+        mechanicId,
+        rating,
+        comment,
+        callDuration
+      })
+    });
+  }
+
+  async getMechanicReviews(mechanicId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reviews/mechanic/${mechanicId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        return { success: true, data: data.data || [] };
+      } else {
+        return { success: false, error: data.error || 'Failed to get reviews' };
+      }
+    } catch (error) {
+      console.error('Get mechanic reviews error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getMyReviews() {
+    return await this.authenticatedRequest('/api/reviews/my-reviews', {
+      method: 'GET'
+    });
+  }
+
+  // === PAYMENT METHODS ===
+
+  async createPayPalOrder(amount, mechanicId, description = '') {
+    return await this.authenticatedRequest('/api/payments/create-order', {
+      method: 'POST',
+      body: JSON.stringify({
+        amount,
+        mechanicId,
+        description
+      })
+    });
+  }
+
+  async capturePayPalPayment(orderId, paymentId) {
+    return await this.authenticatedRequest('/api/payments/capture', {
+      method: 'POST',
+      body: JSON.stringify({
+        orderId,
+        paymentId
+      })
+    });
+  }
+
+  async getPaymentHistory() {
+    return await this.authenticatedRequest('/api/payments/history', {
+      method: 'GET'
+    });
+  }
+
+  // === CALL LOG METHODS ===
+
+  async createCallLog(mechanicId, phoneNumber, callStartTime) {
+    return await this.authenticatedRequest('/api/call-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        mechanicId,
+        phoneNumber,
+        callStartTime: callStartTime.toISOString()
+      })
+    });
+  }
+
+  async endCallLog(callLogId, callEndTime) {
+    return await this.authenticatedRequest(`/api/call-logs/${callLogId}/end`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        callEndTime: callEndTime.toISOString()
+      })
+    });
+  }
+
+  async getPendingReviews() {
+    return await this.authenticatedRequest('/api/call-logs/pending-reviews', {
+      method: 'GET'
+    });
+  }
+
+
 }
+
+
+
 
 export default new AuthService();
