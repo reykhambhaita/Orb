@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
-import { getCurrentUser, login, signup } from './auth.js';
+import { getCurrentUser, login, signup, updateProfile } from './auth.js';
 import { authenticateToken, optionalAuth, requireMechanic } from './authMiddleware.js';
 import {
   createLandmarkHandler,
