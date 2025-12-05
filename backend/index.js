@@ -140,7 +140,7 @@ app.get('/api/user/location-history', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
 // === LANDMARK ROUTES ===
 
 app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);

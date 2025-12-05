@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { Mechanic, User } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
-if(!JWT_SECRET){
+if (!JWT_SECRET) {
   console.error("JWT_SECRET is not defined in environment variables");
   process.exit(1);
 }
@@ -219,3 +219,76 @@ export const getCurrentUser = async (req, res) => {
     res.status(500).json({ error: 'Failed to get user' });
   }
 };
+// Add this to backend/auth.js
+
+export const updateProfile = async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    if (!username && !email) {
+      return res.status(400).json({
+        error: 'At least one field (username or email) is required'
+      });
+    }
+
+    const updates = {};
+
+    // Check if username is being updated and if it's already taken
+    if (username) {
+      const existingUser = await User.findOne({
+        username,
+        _id: { $ne: req.userId }
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'Username already exists'
+        });
+      }
+      updates.username = username;
+    }
+
+    // Check if email is being updated and if it's already taken
+    if (email) {
+      const existingUser = await User.findOne({
+        email,
+        _id: { $ne: req.userId }
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'Email already exists'
+        });
+      }
+      updates.email = email;
+    }
+
+    // Update the user
+    const user = await User.findByIdAndUpdate(
+      req.userId,
+      { $set: updates },
+      { new: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+};
+
+// Add this route to backend/index.js in the AUTH ROUTES section:
+// app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
