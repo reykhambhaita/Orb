@@ -507,7 +507,6 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   if (nearby.length === 0 && totalMechanics > 0) {
     console.log('⚠️ [getNearbyMechanics] No mechanics within radius, but mechanics exist in DB');
     console.log('⚠️ [getNearbyMechanics] Returning all available mechanics for debugging');
-    return allMechanics.slice(0, 20);
   }
 
   return nearby;
