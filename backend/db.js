@@ -109,7 +109,7 @@ locationHistorySchema.virtual('location').get(function () {
 locationHistorySchema.set('toJSON', { virtuals: true });
 locationHistorySchema.set('toObject', { virtuals: true });
 
-// Mechanic Schema - UPDATED with userId reference and lastSeen for TTL
+// Mechanic Schema - UPDATED with userId reference
 const mechanicSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -151,20 +151,13 @@ const mechanicSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  lastSeen: {
-    type: Date,
-    default: Date.now,
-    index: true
-  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
 
-// Optimized compound indexes for better query performance
 mechanicSchema.index({ location: '2dsphere' });
-mechanicSchema.index({ location: '2dsphere', available: 1, lastSeen: -1 });
 
 // NEW: Landmark Schema
 const landmarkSchema = new mongoose.Schema({
@@ -427,17 +420,25 @@ export const getUserLocationHistory = async (userId, limit = 50) => {
     .limit(limit);
 };
 
-// Mechanic Functions - OPTIMIZED with TTL filtering
+// Mechanic Functions
 export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   await connectDB();
 
   console.log('🔍 [getNearbyMechanics] Searching mechanics:', { lat, lng, radius });
+  console.log('🔍 [getNearbyMechanics] Query coordinates: [lng, lat] =', [lng, lat]);
 
-  // Calculate TTL threshold (1 hour ago)
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  // First, check if any mechanics exist at all
+  const totalMechanics = await Mechanic.countDocuments({ available: true });
+  console.log('📊 [getNearbyMechanics] Total available mechanics:', totalMechanics);
 
+  if (totalMechanics === 0) {
+    console.log('❌ [getNearbyMechanics] No mechanics in database!');
+    return [];
+  }
+
+  // Try geospatial query
   try {
-    // Optimized geospatial query with TTL filter
+    console.log('🔍 [getNearbyMechanics] Attempting geospatial query...');
     const mechanics = await Mechanic.find({
       location: {
         $near: {
@@ -445,20 +446,70 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
           $maxDistance: radius
         }
       },
-      available: true,
-      lastSeen: { $gte: oneHourAgo } // Only mechanics active in last hour
+      available: true
     })
       .populate('userId', 'username email')
-      .limit(50); // Increased limit with pagination support
+      .limit(20);
 
-    console.log(`✅ [getNearbyMechanics] Found ${mechanics.length} active mechanics`);
-    return mechanics;
+    console.log('✅ [getNearbyMechanics] Geospatial query found:', mechanics.length, 'mechanics');
 
+    if (mechanics.length > 0) {
+      // Log each mechanic found
+      mechanics.forEach((m, idx) => {
+        console.log(`   ${idx + 1}. ${m.name} at [${m.location.coordinates[0]}, ${m.location.coordinates[1]}]`);
+      });
+      return mechanics;
+    }
+
+    console.log('⚠️ [getNearbyMechanics] Geospatial query returned 0 results, trying fallback...');
   } catch (error) {
-    console.error('❌ [getNearbyMechanics] Geospatial query failed:', error.message);
-    // Return empty array on error (no fallback that loads all mechanics)
-    return [];
+    console.error('⚠️ [getNearbyMechanics] Geospatial query failed:', error.message);
+    console.log('⚠️ [getNearbyMechanics] Falling back to manual distance calculation...');
   }
+
+  // FALLBACK: Manual distance calculation
+  console.log('⚠️ [getNearbyMechanics] Using fallback: manual distance calculation...');
+
+  const allMechanics = await Mechanic.find({ available: true })
+    .populate('userId', 'username email');
+
+  console.log('📊 [getNearbyMechanics] Retrieved all mechanics for manual calculation:', allMechanics.length);
+
+  const mechanicsWithDistance = allMechanics.map(mechanic => {
+    const mechLat = mechanic.location.coordinates[1];
+    const mechLng = mechanic.location.coordinates[0];
+
+    // Haversine formula
+    const R = 6371000; // meters
+    const dLat = (mechLat - lat) * Math.PI / 180;
+    const dLng = (mechLng - lng) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat * Math.PI / 180) * Math.cos(mechLat * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+
+    console.log(`   Distance to ${mechanic.name}: ${(distance / 1000).toFixed(2)}km (${distance.toFixed(0)}m)`);
+
+    return { mechanic, distance };
+  });
+
+  const nearby = mechanicsWithDistance
+    .filter(({ distance }) => distance <= radius)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 20)
+    .map(({ mechanic }) => mechanic);
+
+  console.log('✅ [getNearbyMechanics] Found mechanics (fallback):', nearby.length);
+
+  // If still no results but mechanics exist, return all mechanics (for debugging)
+  if (nearby.length === 0 && totalMechanics > 0) {
+    console.log('⚠️ [getNearbyMechanics] No mechanics within radius, but mechanics exist in DB');
+    console.log('⚠️ [getNearbyMechanics] Returning all available mechanics for debugging');
+  }
+
+  return nearby;
 };
 
 export const createMechanicProfile = async (userId, mechanicData) => {
@@ -497,8 +548,7 @@ export const updateMechanicLocation = async (userId, latitude, longitude) => {
       location: {
         type: 'Point',
         coordinates: [longitude, latitude]
-      },
-      lastSeen: new Date() // Update lastSeen timestamp
+      }
     },
     { new: true }
   );

@@ -200,13 +200,21 @@ export const updateMechanicAvailabilityHandler = async (req, res) => {
 /**
  * Get nearby mechanics (public/authenticated)
  * GET /api/mechanics/nearby?lat=23.0225&lng=70.77&radius=5000
- * Now with TTL filtering for active mechanics only
  */
 export const getNearbyMechanicsHandler = async (req, res) => {
   try {
+    console.log('🔍 [getNearbyMechanicsHandler] Request received');
+    console.log('   Query params:', req.query);
+    console.log('   Headers:', {
+      origin: req.headers.origin,
+      'user-agent': req.headers['user-agent'],
+      authorization: req.headers.authorization ? 'Present' : 'None'
+    });
+
     const { lat, lng, radius } = req.query;
 
     if (!lat || !lng) {
+      console.log('❌ [getNearbyMechanicsHandler] Missing coordinates');
       return res.status(400).json({
         error: 'Latitude and longitude are required'
       });
@@ -216,14 +224,20 @@ export const getNearbyMechanicsHandler = async (req, res) => {
     const longitude = parseFloat(lng);
 
     if (isNaN(latitude) || isNaN(longitude)) {
+      console.log('❌ [getNearbyMechanicsHandler] Invalid coordinates:', { lat, lng });
       return res.status(400).json({
         error: 'Invalid coordinates'
       });
     }
 
+    console.log('✅ [getNearbyMechanicsHandler] Parsed coordinates:', { latitude, longitude });
+
     const searchRadius = radius ? parseInt(radius) : 5000; // Default 5km
+    console.log('🔍 [getNearbyMechanicsHandler] Search radius:', searchRadius, 'meters');
 
     const mechanics = await getNearbyMechanics(latitude, longitude, searchRadius);
+
+    console.log('✅ [getNearbyMechanicsHandler] Query complete, found:', mechanics.length, 'mechanics');
 
     // Transform response
     const transformedMechanics = mechanics.map(mechanic => ({
@@ -237,9 +251,10 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       specialties: mechanic.specialties,
       rating: mechanic.rating,
       available: mechanic.available,
-      lastSeen: mechanic.lastSeen,
       username: mechanic.userId?.username || 'Unknown'
     }));
+
+    console.log('✅ [getNearbyMechanicsHandler] Sending response with', transformedMechanics.length, 'mechanics');
 
     res.json({
       success: true,
@@ -248,6 +263,7 @@ export const getNearbyMechanicsHandler = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ [getNearbyMechanicsHandler] Error:', error);
+    console.error('   Stack:', error.stack);
     res.status(500).json({
       error: 'Failed to get nearby mechanics',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
