@@ -14,12 +14,13 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { Gesture } from 'react-native-gesture-handler';
-import {
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring
+  withSpring,
+  withTiming
 } from 'react-native-reanimated';
 import authService from '../../screens/authService';
 import dbManager from '../../utils/database';
@@ -56,9 +57,33 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
   }));
 
   // Drag gesture state
-  const translateY = useSharedValue(0);
+  const translateY = useSharedValue(800);
   const context = useSharedValue({ y: 0 });
   const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+  const addModalTranslateY = useSharedValue(600);
+
+  useEffect(() => {
+    if (listModalVisible) {
+      translateY.value = withSpring(0, {
+        damping: 18,
+        stiffness: 90,
+      });
+    } else {
+      translateY.value = 800;
+    }
+  }, [listModalVisible]);
+
+  useEffect(() => {
+    if (addModalVisible) {
+      addModalTranslateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 90,
+      });
+    } else {
+      addModalTranslateY.value = 600;
+    }
+  }, [addModalVisible]);
 
   // Monitor network status and trigger sync when coming online
   useEffect(() => {
@@ -522,8 +547,15 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
 
   // Close modal function
   const closeModal = () => {
-    setListModalVisible(false);
-    translateY.value = 0;
+    translateY.value = withTiming(800, { duration: 250 }, () => {
+      runOnJS(setListModalVisible)(false);
+    });
+  };
+
+  const closeAddModal = () => {
+    addModalTranslateY.value = withTiming(600, { duration: 250 }, () => {
+      runOnJS(setAddModalVisible)(false);
+    });
   };
 
   // Pan gesture for dragging
@@ -552,6 +584,10 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
     transform: [{ translateY: translateY.value }],
   }));
 
+  const addModalAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: addModalTranslateY.value }],
+  }));
+
   const getCategoryLabel = (value) => {
     const cat = CATEGORIES.find(c => c.value === value);
     return cat ? cat.label : 'Other';
@@ -559,109 +595,130 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
 
   return (
     <>
-      {/* Landmarks List - Non-Modal Overlay */}
-      {listModalVisible && (
-        <View style={styles.nonModalOverlay}>
-          <View style={styles.listModalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Landmarks</Text>
-              <View style={styles.headerRight}>
-                {syncing && (
-                  <View style={styles.syncIndicator}>
-                    <ActivityIndicator size="small" color="#001f3f" />
-                    <Text style={styles.syncText}>Syncing...</Text>
-                  </View>
-                )}
-                <TouchableOpacity onPress={() => setListModalVisible(false)}>
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
+      {/* Landmarks List - Modal implementation */}
+      <Modal
+        visible={listModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={closeModal}
+          />
+          <GestureDetector gesture={panGesture}>
+            <Animated.View style={[styles.listModalContent, animatedStyle]}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Landmarks</Text>
+                <View style={styles.headerRight}>
+                  {syncing && (
+                    <View style={styles.syncIndicator}>
+                      <ActivityIndicator size="small" color="#001f3f" />
+                      <Text style={styles.syncText}>Syncing...</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity onPress={closeModal}>
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
 
+              {/* Add Landmark Button */}
+              <TouchableOpacity
+                style={[styles.addButton, (!hasLocation || !dbReady) && styles.buttonDisabled]}
+                onPress={() => {
+                  translateY.value = withTiming(800, { duration: 200 }, () => {
+                    runOnJS(setListModalVisible)(false);
+                    runOnJS(setAddModalVisible)(true);
+                  });
+                }}
+                disabled={!hasLocation || !dbReady}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
+                <Text style={styles.addButtonText}>Add Landmark</Text>
+              </TouchableOpacity>
 
+              {/* Landmarks List */}
+              {loading && <ActivityIndicator size="small" color="#001f3f" style={styles.loader} />}
 
-            {/* Add Landmark Button */}
-            <TouchableOpacity
-              style={[styles.addButton, (!hasLocation || !dbReady) && styles.buttonDisabled]}
-              onPress={() => {
-                setListModalVisible(false);
-                setAddModalVisible(true);
-              }}
-              disabled={!hasLocation || !dbReady}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
-              <Text style={styles.addButtonText}>Add Landmark</Text>
-            </TouchableOpacity>
+              {filteredLandmarks.length > 0 ? (
+                <ScrollView
+                  style={styles.landmarksScrollView}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {filteredLandmarks.map((landmark, index) => {
+                    const landmarkId = landmark.id || landmark._id;
+                    const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
 
-            {/* Landmarks List */}
-            {loading && <ActivityIndicator size="small" color="#001f3f" style={styles.loader} />}
+                    const handleLandmarkPress = () => {
+                      if (onLandmarkClick) {
+                        onLandmarkClick(landmark);
+                        closeModal();
+                      }
+                    };
 
-            {filteredLandmarks.length > 0 ? (
-              <ScrollView style={styles.landmarksScrollView}>
-                {filteredLandmarks.map((landmark, index) => {
-                  const landmarkId = landmark.id || landmark._id;
-                  const isOffline = !landmark.synced || landmarkId?.startsWith('offline_');
+                    return (
+                      <TouchableOpacity
+                        key={landmarkId || index}
+                        style={styles.landmarkItem}
+                        onPress={handleLandmarkPress}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.landmarkHeader}>
+                          <View style={styles.landmarkMainInfo}>
+                            <Text style={styles.landmarkName}>
+                              {landmark.name}
+                            </Text>
+                            {landmark.description && (
+                              <Text style={styles.landmarkDescription}>{landmark.description}</Text>
+                            )}
+                          </View>
 
-                  const handleLandmarkPress = () => {
-                    if (onLandmarkClick) {
-                      onLandmarkClick(landmark);
-                      setListModalVisible(false);
-                    }
-                  };
-
-                  return (
-                    <TouchableOpacity
-                      key={landmarkId || index}
-                      style={styles.landmarkItem}
-                      onPress={handleLandmarkPress}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.landmarkHeader}>
-                        <View style={styles.landmarkMainInfo}>
-                          <Text style={styles.landmarkName}>
-                            {landmark.name}
-                          </Text>
-                          {landmark.description && (
-                            <Text style={styles.landmarkDescription}>{landmark.description}</Text>
+                          {landmarkId && (
+                            <TouchableOpacity
+                              style={styles.deleteButton}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleDeleteLandmark(landmarkId, landmark.name);
+                              }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color="#6b7280" />
+                            </TouchableOpacity>
                           )}
                         </View>
-
-                        {landmarkId && (
-                          <TouchableOpacity
-                            style={styles.deleteButton}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              handleDeleteLandmark(landmarkId, landmark.name);
-                            }}
-                          >
-                            <Ionicons name="trash-outline" size={18} color="#6b7280" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>
-                  {searchQuery ? 'No landmarks match your search' : 'No landmarks nearby'}
-                </Text>
-              </View>
-            )}
-          </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>
+                    {searchQuery ? 'No landmarks match your search' : 'No landmarks nearby'}
+                  </Text>
+                </View>
+              )}
+            </Animated.View>
+          </GestureDetector>
         </View>
-      )}
+      </Modal>
 
-      {/* Add Landmark Modal */}
       <Modal
         visible={addModalVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setAddModalVisible(false)}
+        onRequestClose={closeAddModal}
       >
-        <View style={styles.addModalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={closeAddModal}
+          />
+          <Animated.View style={[styles.modalContent, addModalAnimatedStyle]}>
+            <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Add New Landmark</Text>
 
             {/* Name and Category Row */}
@@ -730,10 +787,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setAddModalVisible(false);
-                  setCategoryDropdownVisible(false);
-                }}
+                onPress={closeAddModal}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -745,7 +799,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
                 <Text style={styles.submitButtonText}>Add</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </>
@@ -773,35 +827,26 @@ const styles = StyleSheet.create({
     color: '#000000',
     flex: 1,
   },
-  nonModalOverlay: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1000,
-    pointerEvents: 'box-none', // Allow touches through to search bar
   },
-  listModalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    marginTop: 140,
-    flex: 1, // Take all remaining space
-    marginBottom: 0, // Ensure no gap at bottom
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 20,
-    pointerEvents: 'auto',
-  },
-  addModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+    marginTop: -10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -921,12 +966,12 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 24,
-    width: '90%',
-    maxWidth: 400,
+    width: '100%',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
     shadowRadius: 20,
     elevation: 24,

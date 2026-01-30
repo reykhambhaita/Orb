@@ -13,6 +13,13 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming
+} from 'react-native-reanimated';
 import authService from '../../screens/authService.js';
 import dbManager from '../../utils/database';
 
@@ -22,6 +29,30 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
   const [selectedMechanic, setSelectedMechanic] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
+
+  const translateY = useSharedValue(600);
+
+  useEffect(() => {
+    if (detailModalVisible) {
+      translateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 90,
+      });
+    } else {
+      translateY.value = 600;
+    }
+  }, [detailModalVisible]);
+
+  const animatedContentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const closeDetailModal = () => {
+    translateY.value = withTiming(600, { duration: 250 }, () => {
+      runOnJS(setDetailModalVisible)(false);
+      runOnJS(setSelectedMechanic)(null);
+    });
+  };
 
   useEffect(() => {
     if (searchLocation?.latitude && searchLocation?.longitude) {
@@ -426,11 +457,6 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
     setDetailModalVisible(true);
   };
 
-  const closeDetailModal = () => {
-    setDetailModalVisible(false);
-    setSelectedMechanic(null);
-  };
-
   return (
     <>
       <View style={styles.mechanicsContainer}>
@@ -518,7 +544,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
       {selectedMechanic && (
         <Modal
           visible={detailModalVisible}
-          animationType="slide"
+          animationType="fade"
           transparent={true}
           onRequestClose={closeDetailModal}
         >
@@ -528,7 +554,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
               activeOpacity={1}
               onPress={closeDetailModal}
             />
-            <View style={styles.modalContent}>
+            <Animated.View style={[styles.modalContent, animatedContentStyle]}>
               <View style={styles.modalHandle} />
 
               <View style={styles.modalHeader}>
@@ -612,7 +638,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                   <Text style={styles.reviewButtonText}>Leave a review</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
       )}

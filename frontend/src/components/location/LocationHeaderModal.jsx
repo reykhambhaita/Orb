@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
 import {
   Modal,
   Platform,
@@ -7,6 +8,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming
+} from 'react-native-reanimated';
 
 const LocationHeaderModal = ({
   visible,
@@ -37,26 +45,48 @@ const LocationHeaderModal = ({
   };
 
   const activeSources = getActiveSources();
+  const translateY = useSharedValue(600);
+
+  useEffect(() => {
+    if (visible) {
+      translateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 90,
+      });
+    } else {
+      translateY.value = 600;
+    }
+  }, [visible]);
+
+  const animatedContentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const handleClose = () => {
+    translateY.value = withTiming(600, { duration: 250 }, () => {
+      runOnJS(onClose)();
+    });
+  };
 
   return (
     <Modal
       visible={visible}
       transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
+      animationType="fade"
+      onRequestClose={handleClose}
     >
       <TouchableOpacity
         style={styles.overlay}
         activeOpacity={1}
-        onPress={onClose}
+        onPress={handleClose}
       >
-        <TouchableOpacity
-          style={styles.modalContent}
-          activeOpacity={1}
-          onPress={(e) => e.stopPropagation()}
+        <Animated.View
+          style={[styles.modalContent, animatedContentStyle]}
+          onStartShouldSetResponder={() => true}
+          onTouchEnd={(e) => e.stopPropagation()}
         >
           {/* Close Button */}
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
             <Ionicons name="close" size={24} color="#666" />
           </TouchableOpacity>
 
@@ -136,7 +166,7 @@ const LocationHeaderModal = ({
               </View>
             )}
           </View>
-        </TouchableOpacity>
+        </Animated.View>
       </TouchableOpacity>
     </Modal>
   );

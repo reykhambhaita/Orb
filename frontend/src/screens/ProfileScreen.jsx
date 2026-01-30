@@ -17,6 +17,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  runOnJS
+} from 'react-native-reanimated';
 import { useTheme } from '../context/ThemeContext';
 import authService from './authService';
 
@@ -38,6 +45,30 @@ const ProfileScreen = ({ navigation }) => {
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const translateY = useSharedValue(800);
+  const anyModalVisible = showPaymentModal || showReviewModal || showEditModal || showAppearanceModal;
+
+  useEffect(() => {
+    if (anyModalVisible) {
+      translateY.value = withSpring(0, {
+        damping: 18,
+        stiffness: 90,
+      });
+    } else {
+      translateY.value = 800;
+    }
+  }, [anyModalVisible]);
+
+  const animatedContentStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  const animateAndClose = (closeFn) => {
+    translateY.value = withTiming(800, { duration: 250 }, () => {
+      runOnJS(closeFn)(false);
+    });
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -363,16 +394,16 @@ const ProfileScreen = ({ navigation }) => {
       {/* Appearance Modal */}
       <Modal
         visible={showAppearanceModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
-        onRequestClose={() => setShowAppearanceModal(false)}
+        onRequestClose={() => animateAndClose(setShowAppearanceModal)}
       >
         <TouchableOpacity
           style={dynamicStyles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setShowAppearanceModal(false)}
+          onPress={() => animateAndClose(setShowAppearanceModal)}
         >
-          <View style={dynamicStyles.modalContent}>
+          <Animated.View style={[dynamicStyles.modalContent, animatedContentStyle]}>
             <View style={dynamicStyles.modalHeader}>
               <Text style={dynamicStyles.modalTitle}>Appearance</Text>
               <TouchableOpacity onPress={() => setShowAppearanceModal(false)}>
@@ -416,22 +447,26 @@ const ProfileScreen = ({ navigation }) => {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
 
       {/* Payment History Modal */}
       <Modal
         visible={showPaymentModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
-        onRequestClose={() => setShowPaymentModal(false)}
+        onRequestClose={() => animateAndClose(setShowPaymentModal)}
       >
-        <View style={dynamicStyles.modalOverlay}>
-          <View style={dynamicStyles.modalContent}>
+        <TouchableOpacity
+          style={dynamicStyles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => animateAndClose(setShowPaymentModal)}
+        >
+          <Animated.View style={[dynamicStyles.modalContent, animatedContentStyle]}>
             <View style={dynamicStyles.modalHeader}>
               <Text style={dynamicStyles.modalTitle}>Payment History</Text>
-              <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
+              <TouchableOpacity onPress={() => animateAndClose(setShowPaymentModal)}>
                 <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
@@ -466,22 +501,26 @@ const ProfileScreen = ({ navigation }) => {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Animated.View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Review History Modal */}
       <Modal
         visible={showReviewModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
-        onRequestClose={() => setShowReviewModal(false)}
+        onRequestClose={() => animateAndClose(setShowReviewModal)}
       >
-        <View style={dynamicStyles.modalOverlay}>
-          <View style={dynamicStyles.modalContent}>
+        <TouchableOpacity
+          style={dynamicStyles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => animateAndClose(setShowReviewModal)}
+        >
+          <Animated.View style={[dynamicStyles.modalContent, animatedContentStyle]}>
             <View style={dynamicStyles.modalHeader}>
               <Text style={dynamicStyles.modalTitle}>Review History</Text>
-              <TouchableOpacity onPress={() => setShowReviewModal(false)}>
+              <TouchableOpacity onPress={() => animateAndClose(setShowReviewModal)}>
                 <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
@@ -510,22 +549,26 @@ const ProfileScreen = ({ navigation }) => {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Animated.View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Edit Profile Modal */}
       <Modal
         visible={showEditModal}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
-        onRequestClose={() => setShowEditModal(false)}
+        onRequestClose={() => animateAndClose(setShowEditModal)}
       >
-        <View style={dynamicStyles.modalOverlay}>
-          <View style={dynamicStyles.modalContent}>
+        <TouchableOpacity
+          style={dynamicStyles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => animateAndClose(setShowEditModal)}
+        >
+          <Animated.View style={[dynamicStyles.modalContent, animatedContentStyle]}>
             <View style={dynamicStyles.modalHeader}>
               <Text style={dynamicStyles.modalTitle}>Edit Profile</Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <TouchableOpacity onPress={() => animateAndClose(setShowEditModal)}>
                 <Ionicons name="close" size={28} color={theme.text} />
               </TouchableOpacity>
             </View>
@@ -562,8 +605,8 @@ const ProfileScreen = ({ navigation }) => {
                 <Text style={dynamicStyles.saveButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </Animated.View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
