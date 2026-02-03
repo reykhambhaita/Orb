@@ -1,7 +1,16 @@
 // backend/auth.js
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { Mechanic, User } from './db.js';
+import nodemailer from 'nodemailer';
+import { Mechanic, OTP, User } from './db.js';
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -66,6 +75,25 @@ export const signup = async (req, res) => {
 
     await user.save();
 
+    // NEW: Generate and send OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await OTP.create({ email, otp });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Email Verification OTP',
+      text: `Your OTP for sign up is ${otp}. It will expire in 10 minutes.`,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`OTP sent to ${email}`);
+    } catch (emailError) {
+      console.error('Error sending email:', emailError);
+      // We don't fail the signup if email fails, but in production we might want to
+    }
+
     // NEW: If mechanic role, create mechanic profile automatically
     let mechanicProfile = null;
     if (userRole === 'mechanic') {
@@ -88,30 +116,12 @@ export const signup = async (req, res) => {
       await mechanicProfile.save();
     }
 
-    const token = generateToken(user._id.toString(), user.role);
-
+    // Return success but no token yet, as email needs verification
     res.status(201).json({
       success: true,
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        avatar: user.avatar,
-        createdAt: user.createdAt
-      },
-      mechanicProfile: mechanicProfile ? {
-        id: mechanicProfile._id,
-        name: mechanicProfile.name,
-        phone: mechanicProfile.phone,
-        location: {
-          latitude: mechanicProfile.location.coordinates[1],
-          longitude: mechanicProfile.location.coordinates[0]
-        },
-        specialties: mechanicProfile.specialties,
-        available: mechanicProfile.available
-      } : null
+      message: 'Signup successful. Please verify your email with the OTP sent.',
+      email: user.email,
+      role: user.role
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -226,11 +236,11 @@ export const getCurrentUser = async (req, res) => {
 
 export const updateProfile = async (req, res) => {
   try {
-    const { username, email, avatar } = req.body;
+    const { username, email, avatar, role, mechanicData } = req.body;
 
-    if (!username && !email && !avatar) {
+    if (!username && !email && !avatar && !role) {
       return res.status(400).json({
-        error: 'At least one field (username, email, or avatar) is required'
+        error: 'At least one field is required'
       });
     }
 
@@ -271,6 +281,11 @@ export const updateProfile = async (req, res) => {
       updates.avatar = avatar;
     }
 
+    // Update role if provided
+    if (role && ['user', 'mechanic'].includes(role)) {
+      updates.role = role;
+    }
+
     // Update the user
     const user = await User.findByIdAndUpdate(
       req.userId,
@@ -282,6 +297,31 @@ export const updateProfile = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Handle mechanic profile creation if role changed to mechanic
+    let mechanicProfile = null;
+    if (updates.role === 'mechanic') {
+      const existingMechanic = await Mechanic.findOne({ userId: user._id });
+      if (!existingMechanic) {
+        mechanicProfile = new Mechanic({
+          userId: user._id,
+          name: mechanicData?.name || user.username,
+          phone: mechanicData?.phone || '',
+          location: {
+            type: 'Point',
+            coordinates: [
+              mechanicData?.longitude || 70.77,
+              mechanicData?.latitude || 23.0225
+            ]
+          },
+          specialties: mechanicData?.specialties || [],
+          available: mechanicData?.available !== undefined ? mechanicData.available : true
+        });
+        await mechanicProfile.save();
+      } else {
+        mechanicProfile = existingMechanic;
+      }
+    }
+
     res.json({
       success: true,
       user: {
@@ -291,7 +331,18 @@ export const updateProfile = async (req, res) => {
         role: user.role,
         avatar: user.avatar,
         createdAt: user.createdAt
-      }
+      },
+      mechanicProfile: mechanicProfile ? {
+        id: mechanicProfile._id,
+        name: mechanicProfile.name,
+        phone: mechanicProfile.phone,
+        location: {
+          latitude: mechanicProfile.location.coordinates[1],
+          longitude: mechanicProfile.location.coordinates[0]
+        },
+        specialties: mechanicProfile.specialties,
+        available: mechanicProfile.available
+      } : null
     });
   } catch (error) {
     console.error('Update profile error:', error);
@@ -347,3 +398,107 @@ export const uploadAvatar = async (req, res) => {
 // Add these routes to backend/index.js in the AUTH ROUTES section:
 // app.patch('/api/auth/update-profile', authenticateToken, updateProfile);
 // app.patch('/api/auth/upload-avatar', authenticateToken, uploadAvatar);
+
+export const verifyOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required' });
+    }
+
+    const otpDoc = await OTP.findOne({ email, otp });
+
+    if (!otpDoc) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    // Mark user as verified
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: { isVerified: true } },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Fetch mechanic profile if user is a mechanic
+    let mechanicProfile = null;
+    if (user.role === 'mechanic') {
+      mechanicProfile = await Mechanic.findOne({ userId: user._id });
+    }
+
+    // Delete the OTP as it's used
+    await OTP.deleteOne({ _id: otpDoc._id });
+
+    const token = generateToken(user._id.toString(), user.role);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        avatar: user.avatar,
+        createdAt: user.createdAt
+      },
+      mechanicProfile: mechanicProfile ? {
+        id: mechanicProfile._id,
+        name: mechanicProfile.name,
+        phone: mechanicProfile.phone,
+        location: {
+          latitude: mechanicProfile.location.coordinates[1],
+          longitude: mechanicProfile.location.coordinates[0]
+        },
+        specialties: mechanicProfile.specialties,
+        available: mechanicProfile.available
+      } : null
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ error: 'Failed to verify OTP' });
+  }
+};
+
+export const resendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete any existing OTP for this email
+    await OTP.deleteMany({ email });
+
+    // Generate and send new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await OTP.create({ email, otp });
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Email Verification OTP (Resend)',
+      text: `Your new OTP for sign up is ${otp}. It will expire in 10 minutes.`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: 'OTP resent successfully'
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({ error: 'Failed to resend OTP' });
+  }
+};

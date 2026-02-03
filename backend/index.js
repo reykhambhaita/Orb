@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
-import { getCurrentUser, login, signup, updateProfile, uploadAvatar } from './auth.js';
+import { getCurrentUser, login, resendOTP, signup, updateProfile, uploadAvatar, verifyOTP } from './auth.js';
 import { authenticateToken, optionalAuth, requireMechanic } from './authMiddleware.js';
 import {
   createLandmarkHandler,
@@ -110,6 +110,8 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/auth/signup', authLimiter, signup);
 app.post('/api/auth/login', authLimiter, login);
+app.post('/api/auth/verify-otp', authLimiter, verifyOTP);
+app.post('/api/auth/resend-otp', authLimiter, resendOTP);
 app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 // === USER LOCATION ROUTES (Protected) ===

@@ -82,6 +82,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -328,6 +332,24 @@ const callLogSchema = new mongoose.Schema({
 
 callLogSchema.index({ userId: 1, mechanicId: 1, reviewed: 1 });
 
+// OTP Schema
+const otpSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    index: true
+  },
+  otp: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    expires: 600 // OTP expires in 10 minutes
+  }
+});
+
 
 // --- MODELS ---
 const User = mongoose.models.User || mongoose.model('User', userSchema);
@@ -337,6 +359,7 @@ const Landmark = mongoose.models.Landmark || mongoose.model('Landmark', landmark
 const Review = mongoose.models.Review || mongoose.model('Review', reviewSchema);
 const Payment = mongoose.models.Payment || mongoose.model('Payment', paymentSchema);
 const CallLog = mongoose.models.CallLog || mongoose.model('CallLog', callLogSchema);
+const OTP = mongoose.models.OTP || mongoose.model('OTP', otpSchema);
 
 // --- CONNECTION ---
 let cachedConnection = null;
@@ -619,5 +642,5 @@ export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
   return Array.from(landmarks);
 };
 
-export { CallLog, Landmark, LocationHistory, Mechanic, Payment, Review, User };
+export { CallLog, Landmark, LocationHistory, Mechanic, OTP, Payment, Review, User };
 
