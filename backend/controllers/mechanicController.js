@@ -3,7 +3,8 @@ import {
   createMechanicProfile,
   getNearbyMechanics,
   Mechanic,
-  updateMechanicLocation
+  updateMechanicLocation,
+  updateMechanicUPI
 } from '../db.js';
 
 /**
