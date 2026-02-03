@@ -12,6 +12,30 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const sendEmail = async (mailOptions) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('âš ï¸ EMAIL_USER or EMAIL_PASS not defined. Skipping email sending.');
+    const otpMatch = mailOptions.text.match(/\d{6}/);
+    if (otpMatch) {
+      console.log('ðŸ“¬ [DEBUG OTP] Code is:', otpMatch[0]);
+    }
+    return true; // Return true as if it was sent to allow flow to continue
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`âœ… Email sent to ${mailOptions.to}`);
+    return true;
+  } catch (error) {
+    console.error('â Œ Error sending email:', error);
+    const otpMatch = mailOptions.text.match(/\d{6}/);
+    if (otpMatch) {
+      console.log('ðŸ“¬ [FALLBACK OTP] Code is:', otpMatch[0]);
+    }
+    return false;
+  }
+};
+
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.error("JWT_SECRET is not defined in environment variables");
@@ -86,13 +110,7 @@ export const signup = async (req, res) => {
       text: `Your OTP for sign up is ${otp}. It will expire in 10 minutes.`,
     };
 
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log(`OTP sent to ${email}`);
-    } catch (emailError) {
-      console.error('Error sending email:', emailError);
-      // We don't fail the signup if email fails, but in production we might want to
-    }
+    await sendEmail(mailOptions);
 
     // NEW: If mechanic role, create mechanic profile automatically
     let mechanicProfile = null;
@@ -491,7 +509,7 @@ export const resendOTP = async (req, res) => {
       text: `Your new OTP for sign up is ${otp}. It will expire in 10 minutes.`,
     };
 
-    await transporter.sendMail(mailOptions);
+    await sendEmail(mailOptions);
 
     res.json({
       success: true,
