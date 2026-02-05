@@ -357,13 +357,20 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
         },
       });
     } else {
+      console.warn('Google Maps API Error:', response.data.status, response.data.error_message);
       res.status(404).json({
         error: 'Address not found',
-        message: 'No address found for these coordinates',
+        message: response.data.error_message || 'No address found for these coordinates',
+        status: response.data.status
       });
     }
   } catch (error) {
-    console.error('Reverse geocoding error:', error);
+    console.error('Reverse geocoding error:', error.message);
+    if (error.response) {
+      console.error('Google API Status:', error.response.status);
+      console.error('Google API Data:', error.response.data);
+    }
+
     res.status(500).json({
       error: 'Geocoding failed',
       message: error.message,

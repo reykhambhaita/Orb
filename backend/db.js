@@ -609,7 +609,7 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   });
 
   const nearby = mechanicsWithDistance
-    .filter(({ distance }) => distance <= radius)
+    .filter(({ distance, mechanic }) => distance <= radius && mechanic.userId) // Ensure userId exists
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 20)
     .map(({ mechanic }) => mechanic);
@@ -633,6 +633,11 @@ export const createMechanicProfile = async (userId, mechanicData) => {
   if (existingProfile) {
     throw new Error('Mechanic profile already exists for this user');
   }
+
+  // Ensure user has mechanic role
+  const user = await User.findById(userId);
+  if (!user) throw new Error('User not found');
+  if (user.role !== 'mechanic') throw new Error('User does not have mechanic role');
 
   const mechanic = new Mechanic({
     userId,

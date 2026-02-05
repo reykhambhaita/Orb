@@ -128,7 +128,8 @@ export const signup = async (req, res) => {
           ]
         },
         specialties: mechanicData?.specialties || [],
-        available: mechanicData?.available !== undefined ? mechanicData.available : true
+        available: mechanicData?.available !== undefined ? mechanicData.available : true,
+        upiId: mechanicData?.upiId || ''
       });
 
       await mechanicProfile.save();
@@ -200,7 +201,8 @@ export const login = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
-        available: mechanicProfile.available
+        available: mechanicProfile.available,
+        upiId: mechanicProfile.upiId
       } : null
     });
   } catch (error) {
@@ -242,7 +244,8 @@ export const getCurrentUser = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
-        available: mechanicProfile.available
+        available: mechanicProfile.available,
+        upiId: mechanicProfile.upiId
       } : null
     });
   } catch (error) {
@@ -359,7 +362,8 @@ export const updateProfile = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
-        available: mechanicProfile.available
+        available: mechanicProfile.available,
+        upiId: mechanicProfile.upiId
       } : null
     });
   } catch (error) {
@@ -584,7 +588,8 @@ export const verifyOTP = async (req, res) => {
           longitude: mechanicProfile.location.coordinates[0]
         },
         specialties: mechanicProfile.specialties,
-        available: mechanicProfile.available
+        available: mechanicProfile.available,
+        upiId: mechanicProfile.upiId
       } : null
     });
   } catch (error) {
