@@ -7,11 +7,10 @@ import QRCode from 'qrcode';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 if (!ENCRYPTION_KEY) {
   console.error("ENCRYPTION_KEY is not defined in environment variables");
-  process.exit(1);
+  // Don't exit process in serverless; let it throw and be handled
 }
-if (Buffer.from(ENCRYPTION_KEY, 'hex').length !== 32) {
+if (ENCRYPTION_KEY && Buffer.from(ENCRYPTION_KEY, 'hex').length !== 32) {
   console.error("ENCRYPTION_KEY must be 32 bytes (64 hex characters) long");
-  process.exit(1);
 }
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -186,7 +185,7 @@ const landmarkSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
+    required: false,
     index: true
   },
   name: {
@@ -730,30 +729,20 @@ export const getNearbyLandmarks = async (lat, lng, radius = 5000, category = nul
     .limit(50);
 };
 
-export const getLandmarksNearLocation = async (lat, lng, radius = 1000) => {
+export const getLandmarksNearLocation = async (lat, lng, radius = 5000) => {
   await connectDB();
 
-  const allLocations = await LocationHistory.find({});
-  const nearbyLocations = allLocations.filter(loc => {
-    if (!loc.encryptedLocation) return false;
-
-    const location = decrypt(loc.encryptedLocation);
-    if (!location) return false;
-
-    const latDiff = Math.abs(location.latitude - lat);
-    const lngDiff = Math.abs(location.longitude - lng);
-
-    return latDiff <= 0.01 && lngDiff <= 0.01;
-  });
-
-  const landmarks = new Set();
-  nearbyLocations.forEach(loc => {
-    if (loc.landmarks) {
-      loc.landmarks.forEach(landmark => landmarks.add(landmark));
+  // Optimized: Use geospatial query on Landmarks instead of filtering all LocationHistory
+  const landmarks = await Landmark.find({
+    location: {
+      $near: {
+        $geometry: { type: 'Point', coordinates: [lng, lat] },
+        $maxDistance: radius
+      }
     }
-  });
+  }).limit(50);
 
-  return Array.from(landmarks);
+  return landmarks.map(l => l.name);
 };
 
 export { CallLog, Landmark, LocationHistory, Mechanic, OTP, Payment, Review, User };
