@@ -419,6 +419,80 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
 });
 
 /**
+ * NEW: Reverse geocoding proxy endpoint
+ * Explicitly requested by user for server-side fallback
+ */
+app.post('/api/geocode/reverse', async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    // Try Geoapify first
+    const GEOAPIFY_API_KEY = '40de999970224d4fb47e909a23fd313e';
+    const geoapifyUrl = `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${GEOAPIFY_API_KEY}`;
+
+    try {
+      const geoapifyResponse = await axios.get(geoapifyUrl);
+      if (geoapifyResponse.status === 200) {
+        const data = geoapifyResponse.data;
+        if (data.features && data.features.length > 0) {
+          return res.json({
+            success: true,
+            data: {
+              address: data.features[0].properties.formatted,
+              source: 'geoapify'
+            }
+          });
+        }
+      }
+    } catch (geoError) {
+      console.warn('Geoapify geocoding failed, falling back to Google Maps:', geoError.message);
+    }
+
+    // Fallback to Google Maps
+    const GOOGLE_MAPS_API_KEY = 'AIzaSyA6avqzVmVw_I18DfhT2ivu1ITG6t6a3OA';
+    const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+
+    try {
+      const googleResponse = await axios.get(googleUrl);
+      if (googleResponse.status === 200) {
+        const data = googleResponse.data;
+        if (data.status === 'OK' && data.results && data.results.length > 0) {
+          return res.json({
+            success: true,
+            data: {
+              address: data.results[0].formatted_address,
+              source: 'google'
+            }
+          });
+        }
+      }
+    } catch (googleError) {
+      console.error('Google Maps geocoding failed:', googleError.message);
+    }
+
+    res.status(404).json({
+      success: false,
+      error: 'No address found for these coordinates'
+    });
+
+  } catch (error) {
+    console.error('Reverse geocoding error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reverse geocode'
+    });
+  }
+});
+
+
+/**
  * Batch reverse geocoding endpoint
  * Process multiple coordinates in one request (max 10)
  */
