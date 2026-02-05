@@ -2,6 +2,7 @@
 // CHANGES: Removed syncOpenStreetMapHandler entirely
 
 import { createLandmark, getNearbyLandmarks, Landmark } from '../db.js';
+import { fetchOSMLandmarks } from '../utils/externalLandmarks.js';
 
 /**
  * Create a new landmark
@@ -147,5 +148,61 @@ export const deleteLandmarkHandler = async (req, res) => {
   } catch (error) {
     console.error('Delete landmark error:', error);
     res.status(500).json({ error: 'Failed to delete landmark' });
+  }
+};
+
+/**
+ * Sync landmarks from OpenStreetMap
+ * POST /api/landmarks/sync-osm
+ */
+export const syncOpenStreetMapHandler = async (req, res) => {
+  try {
+    const { lat, lng, radius } = req.body;
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    const searchRadius = radius ? parseInt(radius) : 5000;
+    const osmLandmarks = await fetchOSMLandmarks(lat, lng, searchRadius);
+
+    if (osmLandmarks.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No new landmarks found in this area',
+        count: 0
+      });
+    }
+
+    let savedCount = 0;
+    for (const data of osmLandmarks) {
+      // Check if landmark already exists (by name and approximate location)
+      const existing = await Landmark.findOne({
+        name: data.name,
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [data.longitude, data.latitude] },
+            $maxDistance: 50 // Within 50 meters
+          }
+        }
+      });
+
+      if (!existing) {
+        await createLandmark(req.userId || null, data);
+        savedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully synced ${savedCount} new landmarks from OpenStreetMap`,
+      count: savedCount,
+      total_found: osmLandmarks.length
+    });
+  } catch (error) {
+    console.error('OSM sync error:', error);
+    res.status(500).json({ error: 'Failed to sync with OpenStreetMap' });
   }
 };

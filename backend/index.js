@@ -205,6 +205,9 @@ app.get('/api/landmarks/nearby', optionalAuth, getNearbyLandmarksHandler);
 // Create a new landmark (authenticated users)
 app.post('/api/landmarks', authenticateToken, createLandmarkHandler);
 
+// Sync landmarks from OpenStreetMap
+app.post('/api/landmarks/sync-osm', optionalAuth, syncOpenStreetMapHandler);
+
 // Delete a landmark (authenticated, creator only)
 app.delete('/api/landmarks/:id', authenticateToken, deleteLandmarkHandler);
 
