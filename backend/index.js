@@ -3,6 +3,7 @@
 import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import 'dotenv/config';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
@@ -55,8 +56,8 @@ import {
   getUserLocationHistory,
   updateUserLocation
 } from './db.js';
-
 dotenv.config();
+
 
 const app = express();
 
@@ -310,67 +311,102 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
       });
     }
 
+    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
     const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-    if (!googleApiKey) {
+    if (!geoapifyApiKey && !googleApiKey) {
       return res.status(503).json({
         error: 'Service unavailable',
         message: 'Geocoding service not configured'
       });
     }
 
-    // Call Google Maps Geocoding API
-    const response = await axios.get(
-      `https://maps.googleapis.com/maps/api/geocode/json`,
-      {
-        params: {
-          latlng: `${latitude},${longitude}`,
-          key: googleApiKey,
-        },
-        timeout: 5000,
+    if (geoapifyApiKey) {
+      // Call Geoapify Reverse Geocoding API
+      const response = await axios.get(
+        `https://api.geoapify.com/v1/geocode/reverse`,
+        {
+          params: {
+            lat: latitude,
+            lon: longitude,
+            apiKey: geoapifyApiKey,
+          },
+          timeout: 5000,
+        }
+      );
+
+      if (response.data.features && response.data.features.length > 0) {
+        const result = response.data.features[0].properties;
+
+        res.json({
+          success: true,
+          data: {
+            address: result.formatted,
+            components: {
+              streetNumber: result.housenumber || '',
+              route: result.street || '',
+              city: result.city || '',
+              state: result.state || '',
+              country: result.country || '',
+              postalCode: result.postcode || '',
+            },
+            placeId: result.place_id,
+            locationType: result.rank?.confidence_type || 'unknown',
+            source: 'geoapify',
+          },
+        });
+        return;
       }
-    );
-
-    if (response.data.status === 'OK' && response.data.results.length > 0) {
-      const result = response.data.results[0];
-
-      // Parse address components
-      const components = {};
-      result.address_components.forEach((component) => {
-        const types = component.types;
-        if (types.includes('street_number')) components.streetNumber = component.long_name;
-        if (types.includes('route')) components.route = component.long_name;
-        if (types.includes('locality')) components.city = component.long_name;
-        if (types.includes('administrative_area_level_1')) components.state = component.long_name;
-        if (types.includes('country')) components.country = component.long_name;
-        if (types.includes('postal_code')) components.postalCode = component.long_name;
-      });
-
-      res.json({
-        success: true,
-        data: {
-          address: result.formatted_address,
-          components,
-          placeId: result.place_id,
-          locationType: result.geometry.location_type,
-          source: 'google',
-        },
-      });
-    } else {
-      console.warn('Google Maps API Error:', response.data.status, response.data.error_message);
-      res.status(404).json({
-        error: 'Address not found',
-        message: response.data.error_message || 'No address found for these coordinates',
-        status: response.data.status
-      });
     }
+
+    // Fallback to Google Maps if Geoapify fails or is not configured
+    if (googleApiKey) {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/geocode/json`,
+        {
+          params: {
+            latlng: `${latitude},${longitude}`,
+            key: googleApiKey,
+          },
+          timeout: 5000,
+        }
+      );
+
+      if (response.data.status === 'OK' && response.data.results.length > 0) {
+        const result = response.data.results[0];
+
+        // Parse address components
+        const components = {};
+        result.address_components.forEach((component) => {
+          const types = component.types;
+          if (types.includes('street_number')) components.streetNumber = component.long_name;
+          if (types.includes('route')) components.route = component.long_name;
+          if (types.includes('locality')) components.city = component.long_name;
+          if (types.includes('administrative_area_level_1')) components.state = component.long_name;
+          if (types.includes('country')) components.country = component.long_name;
+          if (types.includes('postal_code')) components.postalCode = component.long_name;
+        });
+
+        res.json({
+          success: true,
+          data: {
+            address: result.formatted_address,
+            components,
+            placeId: result.place_id,
+            locationType: result.geometry.location_type,
+            source: 'google',
+          },
+        });
+        return;
+      }
+    }
+
+    res.status(404).json({
+      error: 'Address not found',
+      message: 'No address found for these coordinates'
+    });
   } catch (error) {
     console.error('Reverse geocoding error:', error.message);
-    if (error.response) {
-      console.error('Google API Status:', error.response.status);
-      console.error('Google API Data:', error.response.data);
-    }
-
     res.status(500).json({
       error: 'Geocoding failed',
       message: error.message,
@@ -400,9 +436,10 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
       });
     }
 
+    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
     const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
 
-    if (!googleApiKey) {
+    if (!geoapifyApiKey && !googleApiKey) {
       return res.status(503).json({
         error: 'Service unavailable',
         message: 'Geocoding service not configured'
@@ -425,27 +462,62 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
       }
 
       try {
-        const response = await axios.get(
-          `https://maps.googleapis.com/maps/api/geocode/json`,
-          {
-            params: {
-              latlng: `${latitude},${longitude}`,
-              key: googleApiKey,
-            },
-            timeout: 5000,
+        let success = false;
+
+        // Try Geoapify first
+        if (geoapifyApiKey) {
+          const response = await axios.get(
+            `https://api.geoapify.com/v1/geocode/reverse`,
+            {
+              params: {
+                lat: latitude,
+                lon: longitude,
+                apiKey: geoapifyApiKey,
+              },
+              timeout: 5000,
+            }
+          );
+
+          if (response.data.features && response.data.features.length > 0) {
+            const result = response.data.features[0].properties;
+            results.push({
+              id: id || null,
+              success: true,
+              address: result.formatted,
+              placeId: result.place_id,
+              source: 'geoapify',
+            });
+            success = true;
           }
-        );
+        }
 
-        if (response.data.status === 'OK' && response.data.results.length > 0) {
-          const result = response.data.results[0];
+        // Fallback to Google if Geoapify failed
+        if (!success && googleApiKey) {
+          const response = await axios.get(
+            `https://maps.googleapis.com/maps/api/geocode/json`,
+            {
+              params: {
+                latlng: `${latitude},${longitude}`,
+                key: googleApiKey,
+              },
+              timeout: 5000,
+            }
+          );
 
-          results.push({
-            id: id || null,
-            success: true,
-            address: result.formatted_address,
-            placeId: result.place_id,
-          });
-        } else {
+          if (response.data.status === 'OK' && response.data.results.length > 0) {
+            const result = response.data.results[0];
+            results.push({
+              id: id || null,
+              success: true,
+              address: result.formatted_address,
+              placeId: result.place_id,
+              source: 'google',
+            });
+            success = true;
+          }
+        }
+
+        if (!success) {
           results.push({
             id: id || null,
             success: false,
