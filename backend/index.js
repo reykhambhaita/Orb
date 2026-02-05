@@ -1,5 +1,6 @@
 // backend/index.js
 
+import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -139,14 +140,45 @@ app.get('/api/auth/me', authenticateToken, getCurrentUser);
 
 app.post('/api/user/location', authenticateToken, async (req, res) => {
   try {
-    const { location, landmarks } = req.body;
+    const { location, landmarks, address, sources } = req.body;
 
     if (!location?.latitude || !location?.longitude) {
       return res.status(400).json({ error: 'Missing required location fields' });
     }
 
-    const result = await updateUserLocation(req.userId, location, landmarks);
-    res.json({ success: true, data: result });
+    // Validate coordinates
+    if (
+      location.latitude < -90 ||
+      location.latitude > 90 ||
+      location.longitude < -180 ||
+      location.longitude > 180
+    ) {
+      return res.status(400).json({ error: 'Invalid coordinates' });
+    }
+
+    // Enhanced location object with metadata
+    const enhancedLocation = {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy: location.accuracy || null,
+      address: address || null,
+      sources: sources || [], // Track which sources contributed (gps, wifi, etc)
+      timestamp: new Date(),
+    };
+
+    const result = await updateUserLocation(
+      req.userId,
+      enhancedLocation,
+      landmarks || []
+    );
+
+    res.json({
+      success: true,
+      data: {
+        id: result._id,
+        timestamp: result.timestamp,
+      }
+    });
   } catch (error) {
     console.error('Update location error:', error);
     res.status(500).json({ error: error.message });
@@ -253,6 +285,249 @@ app.post('/api/payments/upi/create-order', authenticateToken, createUPIPaymentOr
 app.get('/api/payments/upi/status/:transactionId', authenticateToken, getPaymentStatusHandler);
 app.post('/api/payments/upi/manual-verify', authenticateToken, manualVerifyPaymentHandler);
 app.post('/api/payments/upi/expire-old', authenticateToken, expireOldPaymentsHandler);
+
+/**
+ * Server-side reverse geocoding endpoint
+ * Uses Google Maps API as fallback when client geocoding fails
+ * Useful for batch processing or when client is offline
+ */
+app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        error: 'Missing coordinates',
+        message: 'Both latitude and longitude are required'
+      });
+    }
+
+    // Validate coordinates
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      return res.status(400).json({
+        error: 'Invalid coordinates',
+        message: 'Coordinates out of valid range'
+      });
+    }
+
+    const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!googleApiKey) {
+      return res.status(503).json({
+        error: 'Service unavailable',
+        message: 'Geocoding service not configured'
+      });
+    }
+
+    // Call Google Maps Geocoding API
+    const response = await axios.get(
+      `https://maps.googleapis.com/maps/api/geocode/json`,
+      {
+        params: {
+          latlng: `${latitude},${longitude}`,
+          key: googleApiKey,
+        },
+        timeout: 5000,
+      }
+    );
+
+    if (response.data.status === 'OK' && response.data.results.length > 0) {
+      const result = response.data.results[0];
+
+      // Parse address components
+      const components = {};
+      result.address_components.forEach((component) => {
+        const types = component.types;
+        if (types.includes('street_number')) components.streetNumber = component.long_name;
+        if (types.includes('route')) components.route = component.long_name;
+        if (types.includes('locality')) components.city = component.long_name;
+        if (types.includes('administrative_area_level_1')) components.state = component.long_name;
+        if (types.includes('country')) components.country = component.long_name;
+        if (types.includes('postal_code')) components.postalCode = component.long_name;
+      });
+
+      res.json({
+        success: true,
+        data: {
+          address: result.formatted_address,
+          components,
+          placeId: result.place_id,
+          locationType: result.geometry.location_type,
+          source: 'google',
+        },
+      });
+    } else {
+      res.status(404).json({
+        error: 'Address not found',
+        message: 'No address found for these coordinates',
+      });
+    }
+  } catch (error) {
+    console.error('Reverse geocoding error:', error);
+    res.status(500).json({
+      error: 'Geocoding failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Batch reverse geocoding endpoint
+ * Process multiple coordinates in one request (max 10)
+ */
+app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, res) => {
+  try {
+    const { locations } = req.body;
+
+    if (!Array.isArray(locations) || locations.length === 0) {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'locations must be a non-empty array'
+      });
+    }
+
+    if (locations.length > 10) {
+      return res.status(400).json({
+        error: 'Too many locations',
+        message: 'Maximum 10 locations per batch request'
+      });
+    }
+
+    const googleApiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+    if (!googleApiKey) {
+      return res.status(503).json({
+        error: 'Service unavailable',
+        message: 'Geocoding service not configured'
+      });
+    }
+
+    const results = [];
+
+    // Process each location
+    for (const loc of locations) {
+      const { latitude, longitude, id } = loc;
+
+      if (!latitude || !longitude) {
+        results.push({
+          id: id || null,
+          success: false,
+          error: 'Missing coordinates',
+        });
+        continue;
+      }
+
+      try {
+        const response = await axios.get(
+          `https://maps.googleapis.com/maps/api/geocode/json`,
+          {
+            params: {
+              latlng: `${latitude},${longitude}`,
+              key: googleApiKey,
+            },
+            timeout: 5000,
+          }
+        );
+
+        if (response.data.status === 'OK' && response.data.results.length > 0) {
+          const result = response.data.results[0];
+
+          results.push({
+            id: id || null,
+            success: true,
+            address: result.formatted_address,
+            placeId: result.place_id,
+          });
+        } else {
+          results.push({
+            id: id || null,
+            success: false,
+            error: 'Address not found',
+          });
+        }
+
+        // Rate limiting: wait 100ms between requests
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        results.push({
+          id: id || null,
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: results,
+    });
+  } catch (error) {
+    console.error('Batch geocoding error:', error);
+    res.status(500).json({
+      error: 'Batch geocoding failed',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * Get location statistics and insights
+ */
+app.get('/api/user/location-stats', authenticateToken, async (req, res) => {
+  try {
+    const history = await getUserLocationHistory(req.userId, 1000);
+
+    if (!history || history.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          totalLocations: 0,
+          timeRange: null,
+          averageAccuracy: null,
+          uniqueLocations: 0,
+        },
+      });
+    }
+
+    // Calculate statistics
+    let totalAccuracy = 0;
+    let accuracyCount = 0;
+    const uniqueLocations = new Set();
+
+    history.forEach((record) => {
+      if (record.location) {
+        const { latitude, longitude, accuracy } = record.location;
+
+        // Round to ~50m for unique location counting
+        const locKey = `${latitude.toFixed(4)}_${longitude.toFixed(4)}`;
+        uniqueLocations.add(locKey);
+
+        if (accuracy) {
+          totalAccuracy += accuracy;
+          accuracyCount++;
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalLocations: history.length,
+        timeRange: {
+          oldest: history[history.length - 1].timestamp,
+          newest: history[0].timestamp,
+        },
+        averageAccuracy: accuracyCount > 0
+          ? Math.round(totalAccuracy / accuracyCount)
+          : null,
+        uniqueLocations: uniqueLocations.size,
+      },
+    });
+  } catch (error) {
+    console.error('Location stats error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 
 
