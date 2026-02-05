@@ -527,12 +527,12 @@ export const getUserLocationHistory = async (userId, limit = 50) => {
 export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
   await connectDB();
 
-  console.log('🔍 [getNearbyMechanics] Searching mechanics:', { lat, lng, radius });
-  console.log('🔍 [getNearbyMechanics] Query coordinates: [lng, lat] =', [lng, lat]);
+  // console.log('🔍 [getNearbyMechanics] Searching mechanics:', { lat, lng, radius });
+  // console.log('🔍 [getNearbyMechanics] Query coordinates: [lng, lat] =', [lng, lat]);
 
   // First, check if any mechanics exist at all
   const totalMechanics = await Mechanic.countDocuments({ available: true });
-  console.log('📊 [getNearbyMechanics] Total available mechanics:', totalMechanics);
+  // console.log('📊 [getNearbyMechanics] Total available mechanics:', totalMechanics);
 
   if (totalMechanics === 0) {
     console.log('❌ [getNearbyMechanics] No mechanics in database!');
@@ -541,7 +541,7 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
 
   // Try geospatial query
   try {
-    console.log('🔍 [getNearbyMechanics] Attempting geospatial query...');
+    // console.log('🔍 [getNearbyMechanics] Attempting geospatial query...');
     const mechanics = await Mechanic.find({
       location: {
         $near: {
@@ -554,32 +554,32 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
       .populate('userId', 'username email')
       .limit(20);
 
-    console.log('✅ [getNearbyMechanics] Geospatial query found:', mechanics.length, 'mechanics');
+    // console.log('✅ [getNearbyMechanics] Geospatial query found:', mechanics.length, 'mechanics');
 
     if (mechanics.length > 0) {
       // Log each mechanic found
-      mechanics.forEach((m, idx) => {
-        console.log(`   ${idx + 1}. ${m.name} at [${m.location.coordinates[0]}, ${m.location.coordinates[1]}]`);
-      });
+      // mechanics.forEach((m, idx) => {
+      //   console.log(`   ${idx + 1}. ${m.name} at [${m.location.coordinates[0]}, ${m.location.coordinates[1]}]`);
+      // });
       return mechanics;
     }
 
-    console.log('⚠️ [getNearbyMechanics] Geospatial query returned 0 results, trying fallback...');
+    // console.log('⚠️ [getNearbyMechanics] Geospatial query returned 0 results, trying fallback...');
   } catch (error) {
     console.error('⚠️ [getNearbyMechanics] Geospatial query failed:', error.message);
     console.log('⚠️ [getNearbyMechanics] Falling back to manual distance calculation...');
   }
 
   // FALLBACK: Manual distance calculation
-  console.log('⚠️ [getNearbyMechanics] Using fallback: manual distance calculation...');
+  // console.log('⚠️ [getNearbyMechanics] Using fallback: manual distance calculation...');
 
   const allMechanics = await Mechanic.find({ available: true })
     .populate('userId', 'username email');
 
-  console.log('📊 [getNearbyMechanics] Retrieved all mechanics for manual calculation:', allMechanics.length);
+  // console.log('📊 [getNearbyMechanics] Retrieved all mechanics for manual calculation:', allMechanics.length);
 
   const mechanicsWithDistance = allMechanics.map(mechanic => {
-    const mechLat = mechanic.location.coordinates[1];
+    const mechLat = mechanic.location.coordinates[1]; // GeoJSON: [longitude, latitude]
     const mechLng = mechanic.location.coordinates[0];
 
     // Haversine formula
@@ -591,9 +591,19 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
       Math.cos(lat * Math.PI / 180) * Math.cos(mechLat * Math.PI / 180) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c;
+    const distance = R * c; // Distance in meters
 
-    console.log(`   Distance to ${mechanic.name}: ${(distance / 1000).toFixed(2)}km (${distance.toFixed(0)}m)`);
+    // Log first calculation for debugging
+    if (!mechanicsWithDistance.logged) {
+      console.log('📏 Backend distance calculation example:', {
+        searchPoint: { lat, lng },
+        mechanicPoint: { lat: mechLat, lng: mechLng },
+        mechanicName: mechanic.name,
+        distanceKm: (distance / 1000).toFixed(2),
+        distanceM: distance.toFixed(0)
+      });
+      mechanicsWithDistance.logged = true;
+    }
 
     return { mechanic, distance };
   });

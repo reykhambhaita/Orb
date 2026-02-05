@@ -208,13 +208,13 @@ export const updateMechanicAvailabilityHandler = async (req, res) => {
  */
 export const getNearbyMechanicsHandler = async (req, res) => {
   try {
-    console.log('🔍 [getNearbyMechanicsHandler] Request received');
-    console.log('   Query params:', req.query);
-    console.log('   Headers:', {
-      origin: req.headers.origin,
-      'user-agent': req.headers['user-agent'],
-      authorization: req.headers.authorization ? 'Present' : 'None'
-    });
+    // console.log('🔍 [getNearbyMechanicsHandler] Request received');
+    // console.log('   Query params:', req.query);
+    // console.log('   Headers:', {
+    //   origin: req.headers.origin,
+    //   'user-agent': req.headers['user-agent'],
+    //   authorization: req.headers.authorization ? 'Present' : 'None'
+    // });
 
     const { lat, lng, radius } = req.query;
 
@@ -235,14 +235,14 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       });
     }
 
-    console.log('✅ [getNearbyMechanicsHandler] Parsed coordinates:', { latitude, longitude });
+    // console.log('✅ [getNearbyMechanicsHandler] Parsed coordinates:', { latitude, longitude });
 
     const searchRadius = radius ? parseInt(radius) : 5000; // Default 5km
-    console.log('🔍 [getNearbyMechanicsHandler] Search radius:', searchRadius, 'meters');
+    // console.log('🔍 [getNearbyMechanicsHandler] Search radius:', searchRadius, 'meters');
 
     const mechanics = await getNearbyMechanics(latitude, longitude, searchRadius);
 
-    console.log('✅ [getNearbyMechanicsHandler] Query complete, found:', mechanics.length, 'mechanics');
+    // console.log('✅ [getNearbyMechanicsHandler] Query complete, found:', mechanics.length, 'mechanics');
 
     // Transform response
     const transformedMechanics = mechanics.map(mechanic => ({
@@ -261,7 +261,7 @@ export const getNearbyMechanicsHandler = async (req, res) => {
       username: mechanic.userId?.username || 'Unknown'
     }));
 
-    console.log('✅ [getNearbyMechanicsHandler] Sending response with', transformedMechanics.length, 'mechanics');
+    // console.log('✅ [getNearbyMechanicsHandler] Sending response with', transformedMechanics.length, 'mechanics');
 
     res.json({
       success: true,
