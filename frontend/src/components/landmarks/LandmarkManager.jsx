@@ -184,16 +184,20 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
         const result = await authService.getNearbyLandmarks(
           currentLocation.latitude,
           currentLocation.longitude,
-          10000
+          5000
         );
 
         if (result.success && result.data) {
-          console.log(`Loaded ${result.data.length} landmarks from server`);
-          await cacheLandmarks(result.data, db);
-          setNearbyLandmarks(result.data);
-          if (onLandmarksUpdate) {
-            onLandmarksUpdate(result.data);
+          console.log(`📡 Loaded ${result.data.length} landmarks from server`);
+          if (result.data.length > 0) {
+            await cacheLandmarks(result.data, db);
+            setNearbyLandmarks(result.data);
+            if (onLandmarksUpdate) {
+              onLandmarksUpdate(result.data);
+            }
           }
+        } else {
+          console.warn('⚠️ Server failed to return landmarks:', result.error || 'Unknown error');
         }
       }
     } catch (error) {
@@ -227,8 +231,8 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
         return [];
       }
 
-      const latDelta = 10 / 111.32;
-      const lngDelta = 10 / (111.32 * Math.cos(latitude * Math.PI / 180));
+      const latDelta = 5 / 111.32;
+      const lngDelta = 5 / (111.32 * Math.cos(latitude * Math.PI / 180));
 
       const result = await database.getAllAsync(
         `SELECT * FROM landmarks
@@ -575,13 +579,8 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
   return (
     <>
       {/* Landmarks List - Sidebar implementation */}
-      <Modal
-        visible={listModalVisible}
-        transparent={true}
-        animationType="none"
-        onRequestClose={closeListModal}
-      >
-        <View style={styles.sidebarOverlay}>
+      {listModalVisible && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}>
           <TouchableOpacity
             style={styles.sidebarBackdrop}
             activeOpacity={1}
@@ -630,6 +629,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
               style={styles.landmarksScrollView}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.landmarksScrollContent}
+              keyboardShouldPersistTaps="handled"
             >
               {filteredLandmarks.length > 0 ? (
                 filteredLandmarks.map((landmark, index) => {
@@ -687,7 +687,7 @@ const LandmarkManager = forwardRef(({ currentLocation, onLandmarksUpdate, onLand
             </ScrollView>
           </Animated.View>
         </View>
-      </Modal>
+      )}
 
       <Modal
         visible={addModalVisible}
@@ -811,17 +811,15 @@ const styles = StyleSheet.create({
     color: '#000000',
     flex: 1,
   },
-  sidebarOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    flexDirection: 'row',
-  },
   sidebarBackdrop: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   sidebarContent: {
     width: SCREEN_WIDTH * 0.9,
     height: '100%',
+    position: 'absolute',
+    right: 0,
     padding: 24,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     shadowColor: '#000',

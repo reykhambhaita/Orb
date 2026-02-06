@@ -36,6 +36,7 @@
     "@tamagui/themes": "^1.138.5",
     "expo": "~53.0.26",
     "expo-auth-session": "~6.2.1",
+    "expo-build-properties": "^0.14.8",
     "expo-camera": "^16.1.11",
     "expo-crypto": "~14.1.5",
     "expo-font": "~13.3.2",

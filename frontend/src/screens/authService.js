@@ -30,6 +30,26 @@ class AuthService {
     }
   }
 
+  async handleResponse(response) {
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json();
+      } else {
+        const text = await response.text();
+        console.warn(`⚠️ Non-JSON response received from ${response.url}:`, text.substring(0, 100));
+
+        if (response.status === 429) {
+          return { error: 'Too many requests. Please try again later.' };
+        }
+        return { error: text || `Server error (${response.status})` };
+      }
+    } catch (error) {
+      console.error('Error parsing response:', error);
+      return { error: 'Failed to parse server response' };
+    }
+  }
+
   // === AUTHENTICATION METHODS ===
 
   async signup(email, username, password, role = 'user', mechanicData = null) {
@@ -50,7 +70,7 @@ class AuthService {
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Signup failed');
@@ -83,7 +103,7 @@ class AuthService {
         body: JSON.stringify({ email, otp }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Verification failed');
@@ -114,7 +134,7 @@ class AuthService {
         body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Resend failed');
@@ -142,7 +162,7 @@ class AuthService {
         body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to send OTP');
@@ -170,7 +190,7 @@ class AuthService {
         body: JSON.stringify({ email, otp }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Verification failed');
@@ -198,7 +218,7 @@ class AuthService {
         body: JSON.stringify({ email, otp, newPassword }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Password reset failed');
@@ -226,12 +246,13 @@ class AuthService {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Login failed');
       }
 
+      console.log('🔑 Login successful, user role:', data.user?.role);
       await this.storeAuthData(data.token, data.user);
 
       return {
@@ -291,17 +312,23 @@ class AuthService {
           )
         ]);
 
-        const data = await response.json();
+        const data = await this.handleResponse(response);
 
         if (!response.ok) {
           if (response.status === 401 && (data.code === 'INVALID_TOKEN' || data.code === 'NO_TOKEN')) {
             await this.logout();
             throw new Error(data.error || 'Authentication expired');
           }
+          if (response.status === 404) {
+            console.warn('⚠️ User not found on server, logging out...');
+            await this.logout();
+            throw new Error('User not found');
+          }
           throw new Error(data.error || 'Failed to get user');
         }
 
         this.user = data.user;
+        console.log('👤 Current user fetched, role:', data.user?.role);
         await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user));
 
         return {
@@ -354,7 +381,7 @@ class AuthService {
         body: JSON.stringify(updates)
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to update profile');
@@ -391,7 +418,7 @@ class AuthService {
         body: JSON.stringify({ avatar: avatarBase64 })
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to upload avatar');
@@ -481,7 +508,7 @@ class AuthService {
         })
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (response.ok) {
         return { success: true, data: data.data };
@@ -526,7 +553,7 @@ class AuthService {
         )
       ]);
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (response.ok) {
         return {
@@ -568,7 +595,7 @@ class AuthService {
         }
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (response.ok) {
         return { success: true };
@@ -635,10 +662,10 @@ class AuthService {
     try {
       await this.initialize();
 
-      console.log('🔍 [authService.getNearbyMechanics] Starting request');
-      console.log('   API_BASE_URL:', API_BASE_URL);
-      console.log('   Params:', { latitude, longitude, radius });
-      console.log('   Has token:', !!this.token);
+      // console.log('🔍 [authService.getNearbyMechanics] Starting request');
+      // console.log('   API_BASE_URL:', API_BASE_URL);
+      // console.log('   Params:', { latitude, longitude, radius });
+      // console.log('   Has token:', !!this.token);
 
       const params = new URLSearchParams({
         lat: latitude.toString(),
@@ -655,7 +682,7 @@ class AuthService {
       }
 
       const url = `${API_BASE_URL}/api/mechanics/nearby?${params}`;
-      console.log('   Full URL:', url);
+      // console.log('   Full URL:', url);
 
       const response = await Promise.race([
         fetch(url, {
@@ -667,15 +694,15 @@ class AuthService {
         )
       ]);
 
-      console.log('✅ [authService.getNearbyMechanics] Response received');
-      console.log('   Status:', response.status);
-      console.log('   OK:', response.ok);
+      // console.log('✅ [authService.getNearbyMechanics] Response received');
+      // console.log('   Status:', response.status);
+      // console.log('   OK:', response.ok);
 
-      const data = await response.json();
-      console.log('   Response data:', JSON.stringify(data, null, 2));
+      const data = await this.handleResponse(response);
+      // console.log('   Response data:', JSON.stringify(data, null, 2));
 
       if (response.ok) {
-        console.log('✅ [authService.getNearbyMechanics] Success! Found', data.data?.length || 0, 'mechanics');
+        // console.log('✅ [authService.getNearbyMechanics] Success! Found', data.data?.length || 0, 'mechanics');
         return {
           success: true,
           data: data.data || [],
@@ -726,7 +753,7 @@ class AuthService {
         )
       ]);
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (response.ok) {
         return { success: true, data: data.data || data };
@@ -760,7 +787,7 @@ class AuthService {
         }
       });
 
-      const data = await response.json();
+      const data = await this.handleResponse(response);
 
       if (response.ok) {
         return { success: true, data: data.data || [] };
@@ -887,6 +914,36 @@ class AuthService {
     return await this.authenticatedRequest('/api/call-logs/pending-reviews', {
       method: 'GET'
     });
+  }
+
+  // === LOCATION METHODS ===
+
+  async reverseGeocode(latitude, longitude) {
+    try {
+      console.log(`🌐 AuthService: Requesting reverse geocode for ${latitude}, ${longitude}`);
+      await this.initialize();
+
+      const response = await fetch(`${API_BASE_URL}/api/geocode/reverse`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude, longitude }),
+      });
+
+      const data = await this.handleResponse(response);
+
+      // Ensure we properly check for success
+      if (response.ok && data.success && data.data?.address) {
+        return data;
+      }
+
+      console.warn('Server geocoding returned no address:', data);
+      return { success: false, error: data.error || 'No address found' };
+    } catch (error) {
+      console.error('Reverse geocode request failed:', error);
+      return { success: false, error: error.message };
+    }
   }
 
 

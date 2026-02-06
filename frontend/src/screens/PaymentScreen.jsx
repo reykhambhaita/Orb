@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   Modal,
   ScrollView,
@@ -198,11 +200,34 @@ const PaymentScreen = ({ route, navigation }) => {
       const canOpen = await Linking.canOpenURL(upiUrl);
 
       if (!canOpen) {
+        // Some systems might still fail the canOpenURL check despite config
+        // Show a more helpful message and allow the user to try anyway if they're sure
         setLoading(false);
         setPaymentState('idle');
+
         Alert.alert(
-          'No UPI App Found',
-          'No UPI supporting apps found on this device. Please install a UPI app like Google Pay, PhonePe, or Paytm.'
+          'UPI App Detection',
+          'We couldn\'t verify if a UPI app is installed. This can happen on some devices even if apps are present.\n\nWould you like to try opening the payment anyway?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Try Anyway',
+              onPress: async () => {
+                setLoading(true);
+                setPaymentState('waiting');
+                try {
+                  await Linking.openURL(upiUrl);
+                  setPaymentState('polling');
+                  setLoading(false);
+                  startPolling(txnId);
+                } catch (e) {
+                  setLoading(false);
+                  setPaymentState('idle');
+                  Alert.alert('Error', 'Failed to open any UPI app. Please ensure one is installed.');
+                }
+              }
+            }
+          ]
         );
         return;
       }
@@ -234,10 +259,10 @@ const PaymentScreen = ({ route, navigation }) => {
   const constructUPIUrl = ({ vpa, name, amount, transactionId, note }) => {
     const params = new URLSearchParams({
       pa: vpa,                              // Payee VPA
-      pn: encodeURIComponent(name),         // Payee name
+      pn: name,                             // Payee name (URLSearchParams handles encoding)
       am: amount.toString(),                // Amount
       tr: transactionId,                    // Transaction reference
-      tn: encodeURIComponent(note),         // Transaction note
+      tn: note,                             // Transaction note
       cu: 'INR'                             // Currency
     });
 

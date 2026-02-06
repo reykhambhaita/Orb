@@ -98,7 +98,16 @@ const LocationHeaderModal = ({
 
           {/* Address */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>📍 Current Location</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>📍 Current Location</Text>
+              {currentLocation?.addressSource && (
+                <View style={[styles.sourceBadge, { backgroundColor: isDark ? '#333' : '#f3f4f6' }]}>
+                  <Text style={[styles.sourceBadgeText, { color: textSecondaryColor }]}>
+                    {currentLocation.addressSource.toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text style={[styles.addressText, { color: textColor }]}>
               {currentLocation?.address || 'Acquiring location...'}
             </Text>
@@ -202,13 +211,27 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 20,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
     color: '#888888',
-    marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  sourceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  sourceBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   addressText: {
     fontSize: 16,

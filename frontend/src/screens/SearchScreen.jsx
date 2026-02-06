@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import LandmarkManager from '../components/landmarks/LandmarkManager';
 import MechanicFinder from '../components/mechanics/MechanicFinder';
 import { useTheme } from '../context/ThemeContext';
@@ -41,61 +41,66 @@ const SearchScreen = ({ navigation, route, currentLocation, onLandmarksUpdate, o
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        {/* Search Bar Row */}
-        <View style={styles.searchRow}>
-          <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Search clues or landmarks..."
-              placeholderTextColor={theme.textSecondary}
-              value={landmarkSearchQuery}
-              onChangeText={(text) => {
-                setLandmarkSearchQuery(text);
-                if (text.length > 0) {
-                  landmarkManagerRef.current?.openLandmarkList();
-                }
-              }}
-            />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Search Bar Row */}
+          <View style={styles.searchRow}>
+            <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Ionicons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: theme.text }]}
+                placeholder="Search clues or landmarks..."
+                placeholderTextColor={theme.textSecondary}
+                value={landmarkSearchQuery}
+                onChangeText={(text) => {
+                  setLandmarkSearchQuery(text);
+                  if (text.length > 0) {
+                    landmarkManagerRef.current?.openLandmarkList();
+                  }
+                }}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
+              onPress={() => landmarkManagerRef.current?.openAddLandmark()}
+            >
+              <Ionicons name="add" size={24} color={isDark ? '#000' : '#fff'} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
+              onPress={() => landmarkManagerRef.current?.openLandmarkList()}
+            >
+              <Ionicons name="map-outline" size={22} color={isDark ? '#000' : '#fff'} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
-            onPress={() => landmarkManagerRef.current?.openAddLandmark()}
-          >
-            <Ionicons name="add" size={24} color={isDark ? '#000' : '#fff'} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: isDark ? '#fff' : (theme.primary || '#111111') }]}
-            onPress={() => landmarkManagerRef.current?.openLandmarkList()}
-          >
-            <Ionicons name="map-outline" size={22} color={isDark ? '#000' : '#fff'} />
-          </TouchableOpacity>
-        </View>
 
-        <LandmarkManager
-          ref={landmarkManagerRef}
-          currentLocation={currentLocation}
-          onLandmarksUpdate={onLandmarksUpdate}
-          onLandmarkClick={handleLandmarkClick}
-          searchQuery={landmarkSearchQuery}
-        />
-
-        <MechanicFinder
-          ref={mechanicFinderRef}
-          searchLocation={searchLocation}
-          searchLocationName={searchLocationName}
-          onResetToGPS={handleResetToGPS}
-          onMechanicsUpdate={onMechanicsUpdate}
-          navigation={navigation}
-          onFilterPress={() => landmarkManagerRef.current?.openLandmarkList()}
-          targetMechanicId={route.params?.mechanicId}
-        />
-      </ScrollView>
+          <MechanicFinder
+            ref={mechanicFinderRef}
+            searchLocation={searchLocation}
+            searchLocationName={searchLocationName}
+            onResetToGPS={handleResetToGPS}
+            onMechanicsUpdate={onMechanicsUpdate}
+            navigation={navigation}
+            onFilterPress={() => landmarkManagerRef.current?.openLandmarkList()}
+            targetMechanicId={route.params?.mechanicId}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <LandmarkManager
+        ref={landmarkManagerRef}
+        currentLocation={currentLocation}
+        onLandmarksUpdate={onLandmarksUpdate}
+        onLandmarkClick={handleLandmarkClick}
+        searchQuery={landmarkSearchQuery}
+      />
     </View>
   );
 };

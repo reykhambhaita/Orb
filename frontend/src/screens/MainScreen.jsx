@@ -53,6 +53,7 @@ const MainScreen = ({ navigation, route }) => {
     }
   }, [navigation, activeTab]);
 
+
   const handleLocationUpdate = (location) => {
     setCurrentLocation(location);
   };

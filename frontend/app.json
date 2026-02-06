@@ -18,7 +18,10 @@
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to discover and connect to nearby devices.",
         "NSLocationWhenInUseUsageDescription": "This app needs location access to provide accurate tracking.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses background location to improve accuracy."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses background location to improve accuracy.",
+        "LSApplicationQueriesSchemes": [
+          "upi"
+        ]
       }
     },
     "android": {
@@ -72,11 +75,28 @@
       ],
       "expo-web-browser",
       "@maplibre/maplibre-react-native",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "queries": [
+              {
+                "intent": {
+                  "action": "android.intent.action.VIEW",
+                  "data": {
+                    "scheme": "upi"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
-        "projectId": "cef3b7bc-5cb6-498d-938c-2994757363f9"
+        "projectId": "572e7a0b-b419-4715-b546-149d29f47602"
       }
     }
   }

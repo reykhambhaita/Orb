@@ -26,7 +26,6 @@ const PermissionsScreen = ({ navigation }) => {
   });
 
   const [permissions, setPermissions] = useState({
-    phone: true, // Defaulting to true as Expo handles dialer via Linking
     location: false,
     camera: false,
     photos: false,
@@ -54,7 +53,6 @@ const PermissionsScreen = ({ navigation }) => {
         camera: cameraStatus === 'granted',
         photos: photoStatus === 'granted',
         notification: notificationStatus === 'granted',
-        phone: true, // System handles dialer
       });
     } catch (error) {
       console.error('Error checking permissions:', error);
@@ -90,15 +88,6 @@ const PermissionsScreen = ({ navigation }) => {
   };
 
   const togglePermission = async (key) => {
-    // If it's the phone or something we want to keep enabled for UX, just ignore or show info
-    if (key === 'phone') {
-      Alert.alert(
-        'Phone Access',
-        'This app uses the system dialer to contact mechanics. No special background permission is required for this action.'
-      );
-      return;
-    }
-
     // If it's already true, we can't easily revoke it from JS on most OSes.
     // We should tell them to go to settings if they want to disable it.
     if (permissions[key]) {
@@ -195,13 +184,6 @@ const PermissionsScreen = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>APP PERMISSIONS</Text>
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <PermissionItem
-              icon="call-outline"
-              label="Phone"
-              description="Allow app to make calls to mechanics"
-              value={permissions.phone}
-              onToggle={() => togglePermission('phone')}
-            />
             <PermissionItem
               icon="location-outline"
               label="Location"

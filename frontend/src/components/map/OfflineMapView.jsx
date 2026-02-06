@@ -1,5 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as MapLibreGL from '@maplibre/maplibre-react-native';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+MapLibreGL.setConnected(true);
 
 const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navigation, isFullScreen }) => {
   const handleMechanicClick = (mechanic) => {
@@ -8,6 +11,10 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navig
       navigation.navigate('Main', { mechanicId: mechanic.id || mechanic._id });
     }
   };
+
+  const centerCoordinate = currentLocation?.latitude && currentLocation?.longitude
+    ? [currentLocation.longitude, currentLocation.latitude]
+    : [0, 0];
 
   return (
     <View style={[styles.container, isFullScreen && styles.fullScreenContainer]}>
@@ -19,68 +26,94 @@ const OfflineMapView = ({ currentLocation, landmarks = [], mechanics = [], navig
       )}
 
       <View style={styles.mapArea}>
-        {/* Simulated Map Background */}
-        <View style={styles.mapGrid}>
-          {[...Array(40)].map((_, i) => (
-            <View key={i} style={styles.gridLine} />
-          ))}
-        </View>
+        <MapLibreGL.MapView
+          style={styles.map}
+          mapStyle={require('../../../assets/maps/streets-v4-style.json')}
+          compassEnabled={true}
+          logoEnabled={false}
+          scaleBarEnabled={true}
+        >
+          <MapLibreGL.Camera
+            zoomLevel={14}
+            centerCoordinate={centerCoordinate}
+            animationMode="flyTo"
+            animationDuration={1000}
+          />
 
-        {/* Current Location Marker */}
-        {currentLocation && (
-          <View style={[styles.marker, styles.userMarker, {
-            left: '50%',
-            top: '50%',
-            transform: [{ translateX: -10 }, { translateY: -10 }]
-          }]}>
-            <View style={styles.userPulse} />
-            <View style={styles.userDot} />
-          </View>
-        )}
+          <MapLibreGL.UserLocation
+            visible={true}
+            showsUserHeadingIndicator={true}
+          />
 
-        {/* Landmarks (Context Clues) Overlays */}
-        {landmarks.slice(0, 8).map((landmark, index) => {
-          // Spread landmarks more widely for full-screen
-          const left = 10 + (index * 12) % 80;
-          const top = 15 + (index * 18) % 70;
-
-          return (
-            <View
-              key={landmark.id || index}
-              style={[styles.landmarkMarker, { left: `${left}%`, top: `${top}%` }]}
+          {/* User Location Marker with Pulse */}
+          {currentLocation?.latitude && currentLocation?.longitude && (
+            <MapLibreGL.PointAnnotation
+              id="user-location"
+              coordinate={[currentLocation.longitude, currentLocation.latitude]}
             >
-              <View style={styles.landmarkDot} />
-              <View style={styles.landmarkLabelContainer}>
-                <Text style={styles.landmarkLabel}>{landmark.name}</Text>
+              <View style={[styles.marker, styles.userMarker]}>
+                <View style={styles.userPulse} />
+                <View style={styles.userDot} />
               </View>
-            </View>
-          );
-        })}
+            </MapLibreGL.PointAnnotation>
+          )}
 
-        {/* Mechanic Tooltips */}
-        {mechanics.slice(0, 5).map((mechanic, index) => {
-          // Semi-random positioning for demo purposes
-          const left = 20 + (index * 18) % 65;
-          const top = 40 + (index * 14) % 55;
+          {/* Landmark Markers */}
+          {landmarks.map((landmark, index) => {
+            const lng = landmark.longitude || landmark.location?.longitude;
+            const lat = landmark.latitude || landmark.location?.latitude;
 
-          return (
-            <TouchableOpacity
-              key={mechanic.id || mechanic._id || index}
-              onPress={() => handleMechanicClick(mechanic)}
-              activeOpacity={0.8}
-              style={[styles.tooltipContainer, { left: `${left}%`, top: `${top}%` }]}
-            >
-              <View style={styles.tooltipContent}>
-                <Text style={styles.tooltipName} numberOfLines={1}>{mechanic.name}</Text>
-                <View style={styles.tooltipRating}>
-                  <Ionicons name="star" size={10} color="#FFD700" />
-                  <Text style={styles.tooltipRatingText}>{(mechanic.rating || 0).toFixed(1)}</Text>
+            if (!lng || !lat) return null;
+
+            return (
+              <MapLibreGL.PointAnnotation
+                key={`landmark-${landmark.id || landmark._id || index}`}
+                id={`landmark-${landmark.id || landmark._id || index}`}
+                coordinate={[lng, lat]}
+                anchor={{ x: 0.5, y: 1 }}
+              >
+                <View style={styles.landmarkMarker}>
+                  <View style={styles.landmarkDot} />
+                  <View style={styles.landmarkLabelContainer}>
+                    <Text style={styles.landmarkLabel}>{landmark.name}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.tooltipArrow} />
-            </TouchableOpacity>
-          );
-        })}
+              </MapLibreGL.PointAnnotation>
+            );
+          })}
+
+          {/* Mechanic Markers */}
+          {mechanics.map((mechanic, index) => {
+            const lng = mechanic.longitude || mechanic.location?.longitude;
+            const lat = mechanic.latitude || mechanic.location?.latitude;
+
+            if (!lng || !lat) return null;
+
+            return (
+              <MapLibreGL.PointAnnotation
+                key={`mechanic-${mechanic.id || mechanic._id || index}`}
+                id={`mechanic-${mechanic.id || mechanic._id || index}`}
+                coordinate={[lng, lat]}
+                anchor={{ x: 0.5, y: 1 }}
+              >
+                <TouchableOpacity
+                  onPress={() => handleMechanicClick(mechanic)}
+                  activeOpacity={0.8}
+                  style={styles.tooltipContainer}
+                >
+                  <View style={styles.tooltipContent}>
+                    <Text style={styles.tooltipName} numberOfLines={1}>{mechanic.name}</Text>
+                    <View style={styles.tooltipRating}>
+                      <Ionicons name="star" size={10} color="#FFD700" />
+                      <Text style={styles.tooltipRatingText}>{(mechanic.rating || 0).toFixed(1)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.tooltipArrow} />
+                </TouchableOpacity>
+              </MapLibreGL.PointAnnotation>
+            );
+          })}
+        </MapLibreGL.MapView>
 
         {/* Mechanic Count Overlay */}
         {isFullScreen && (
@@ -146,20 +179,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     position: 'relative',
   },
-  mapGrid: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.03,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  gridLine: {
-    width: '20%',
-    height: '12.5%',
-    borderWidth: 0.5,
-    borderColor: '#000',
+  map: {
+    flex: 1,
   },
   marker: {
-    position: 'absolute',
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -185,7 +208,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59, 130, 246, 0.2)',
   },
   landmarkMarker: {
-    position: 'absolute',
     alignItems: 'center',
   },
   landmarkDot: {
@@ -208,7 +230,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tooltipContainer: {
-    position: 'absolute',
     alignItems: 'center',
     zIndex: 5,
   },

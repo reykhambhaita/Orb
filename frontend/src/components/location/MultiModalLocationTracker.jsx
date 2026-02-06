@@ -7,6 +7,8 @@ import { BleManager } from "react-native-ble-plx";
 import WifiManager from "react-native-wifi-reborn";
 import authService from "../../screens/authService";
 import dbManager from "../../utils/database";
+import { enhancedGeocoder, gpsEnhancer } from '../../utils/EnhancedLocationServices';
+import offlineCache from '../../utils/OfflineLocationCache';
 class KalmanFilter {
   constructor(
     processNoise = 0.001,
@@ -72,7 +74,7 @@ const WIFI_TX_POWER = -40; // Typical WiFi transmit power (dBm)
 const BLE_TX_POWER = -59; // Typical BLE transmit power (dBm)
 const PATH_LOSS_EXPONENT = 2.0; // Free space = 2.0, indoor = 2.5-4.0
 
-const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpdate, onMechanicUpdate }, ref) => {
+const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpdate, onMechanicsUpdate }, ref) => {
   const [currentLocation, setCurrentLocation] = useState({
     latitude: null,
     longitude: null,
@@ -132,6 +134,16 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
   // Cache for reverse geocoding to avoid excessive API calls
   const lastGeocodedLocation = useRef({ lat: null, lng: null, address: null });
+  const lastKnownLocation = useRef(null);
+  const currentAddressRef = useRef(null);
+  const addressSourceRef = useRef(null);
+  const networkStatusRef = useRef({ isConnected: true, type: 'initial' }); // Assume online initially
+
+  // Ref to track location sources and avoid stale closures in intervals
+  const locationSourcesRef = useRef(locationSources);
+  useEffect(() => {
+    locationSourcesRef.current = locationSources;
+  }, [locationSources]);
 
   // ---------- Token Management ----------
   const getToken = async () => {
@@ -145,67 +157,187 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
   // ---------- Reverse Geocoding ----------
   const reverseGeocode = async (latitude, longitude) => {
+    console.log(`🔍 [FLOW] MultiModalLocationTracker: reverseGeocode called for ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
     try {
-      // First, check if we have a verified address for this location
-      const verifiedAddress = await checkVerifiedAddress(latitude, longitude);
-      if (verifiedAddress) {
-        setShowAddressFeedback(false); // Don't show feedback for verified addresses
-        return verifiedAddress;
-      }
-
-      // Only geocode if location has changed significantly (>50 meters)
+      // STEP 1: Check if location changed significantly (>20m)
       const lastLat = lastGeocodedLocation.current.lat;
       const lastLng = lastGeocodedLocation.current.lng;
 
       if (lastLat && lastLng) {
         const distance = getDistanceInMeters(lastLat, lastLng, latitude, longitude);
-        if (distance < 50 && lastGeocodedLocation.current.address) {
+        if (distance < 20 && lastGeocodedLocation.current.address) {
+          console.log(`📍 Geocoding: Skip (moved only ${distance.toFixed(1)}m)`);
           return lastGeocodedLocation.current.address;
         }
       }
 
-      // Perform reverse geocoding
-      const result = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
-
-      if (result && result.length > 0) {
-        const location = result[0];
-        // Build address string from available components
-        const addressParts = [];
-
-        if (location.name) addressParts.push(location.name);
-        if (location.street) addressParts.push(location.street);
-        if (location.city) addressParts.push(location.city);
-        if (location.region) addressParts.push(location.region);
-        if (location.country) addressParts.push(location.country);
-
-        const address = addressParts.join(', ') || 'Address unavailable';
-
-        // Cache the result
-        lastGeocodedLocation.current = {
-          lat: latitude,
-          lng: longitude,
-          address,
-        };
-
-        // Show feedback UI for newly geocoded addresses (if not already given feedback)
-        if (!addressFeedbackGiven && address !== 'Address unavailable') {
-          setShowAddressFeedback(true);
-          // Auto-hide after 10 seconds
-          setTimeout(() => {
-            setShowAddressFeedback(false);
-          }, 10000);
-        }
-
-        return address;
+      // STEP 2: Check verified addresses first (user feedback)
+      const verifiedAddress = await checkVerifiedAddress(latitude, longitude);
+      if (verifiedAddress) {
+        setShowAddressFeedback(false);
+        console.log('✅ Geocoding: Using verified address');
+        return verifiedAddress;
       }
 
-      return 'Address unavailable';
+      // STEP 3: If online, try network geocoding (OSM/Server)
+      if (networkStatusRef.current.isConnected) {
+        console.log(`🌐 Geocoding: Attempting to resolve ${latitude}, ${longitude}...`);
+        try {
+          const result = await enhancedGeocoder.reverseGeocode(latitude, longitude, {
+            useGoogle: false, // Explicitly not using Google as requested
+            useNative: true,
+            useCache: false, // Bypass memory cache for development accuracy
+            isOnline: true,
+          });
+
+          if (result.address && result.source !== 'coordinates') {
+            const address = result.address;
+            const source = result.source;
+            const confidence = result.confidence;
+
+            console.log(`✅ Geocoding: Got address from ${source}: ${address}`);
+
+            // Update state and cache
+            const newLocation = {
+              latitude,
+              longitude,
+              address,
+              addressSource: source,
+              addressConfidence: confidence
+            };
+
+            updateStateAndCache(newLocation, latitude, longitude, address, source, confidence);
+            return address;
+          }
+        } catch (error) {
+          console.warn('🌐 Network geocoding failed, falling back to cache:', error.message);
+        }
+      }
+
+      // STEP 4: Check offline cache (frequent locations) - Fallback
+      console.log('📦 Geocoding: Falling back to offline cache...');
+      const cachedResult = await offlineCache.getCachedAddress(latitude, longitude, 100);
+      if (cachedResult) {
+        setShowAddressFeedback(false);
+        console.log(`✅ Geocoding: Using offline cache (${cachedResult.visitCount} visits)`);
+
+        const newLocation = {
+          latitude,
+          longitude,
+          address: cachedResult.address,
+          addressSource: cachedResult.source || 'cache',
+          addressConfidence: cachedResult.confidence || 'medium'
+        };
+
+        updateStateAndCache(newLocation, latitude, longitude, cachedResult.address, newLocation.addressSource, newLocation.addressConfidence);
+        return cachedResult.address;
+      }
+
+      // STEP 5: If still no address, try to predict from nearby locations
+      if (!networkStatusRef.current.isConnected) {
+        const predicted = await offlineCache.predictAddress(latitude, longitude, 500);
+        if (predicted) {
+          return `~${predicted.address}`;
+        }
+      }
+
+      return address;
+
     } catch (error) {
       console.error('Reverse geocoding error:', error);
-      return 'Address unavailable';
+
+      // Final fallback: try offline prediction
+      try {
+        const predicted = await offlineCache.predictAddress(latitude, longitude, 500);
+        if (predicted) {
+          return `~${predicted.address}`;
+        }
+      } catch (e) {
+        console.error('Offline prediction failed:', e);
+      }
+
+      return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+    }
+  };
+
+  /**
+   * Get high-accuracy initial GPS fix
+   * Uses multiple measurements and weighted averaging
+   */
+  const getInitialHighAccuracyLocation = async () => {
+    try {
+      // console.log('📍 Getting high-accuracy initial GPS fix...');
+
+      const location = await gpsEnhancer.getHighAccuracyLocation({
+        targetAccuracy: 15, // meters
+        maxWaitTime: 10000, // 10 seconds max wait
+      });
+
+      // console.log(`✅ High-accuracy location: ±${location.accuracy.toFixed(1)}m`);
+
+      return {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy: location.accuracy,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error('High-accuracy location failed, using standard GPS:', error);
+
+      // Fallback to standard GPS
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      return {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: Date.now(),
+      };
+    }
+  };
+
+  /**
+   * Helper to update state and caches after geocoding
+   */
+  const updateStateAndCache = async (newLocation, latitude, longitude, address, source, confidence) => {
+    // Update refs
+    currentAddressRef.current = address;
+    addressSourceRef.current = source;
+    lastKnownLocation.current = newLocation;
+    lastGeocodedLocation.current = { lat: latitude, lng: longitude, address };
+
+    // Update state for UI
+    setCurrentLocation(prev => ({
+      ...prev,
+      ...newLocation,
+      address
+    }));
+
+    // Notify parent
+    if (onLocationUpdate) {
+      console.log(`📤 [FLOW] MultiModalLocationTracker: Sending update to Parent: ${address}`);
+      onLocationUpdate({ ...newLocation, address });
+    }
+
+    // Trigger immediate sync on first valid location
+    if (!lastKnownLocation.current) {
+      autoSyncData(newLocation);
+    }
+
+    // Store in offline cache for future offline use
+    if (source === 'google' || source === 'native' || source === 'server' || source === 'osm') {
+      await offlineCache.cacheAddress(latitude, longitude, address, {
+        source,
+        confidence,
+      });
+    }
+
+    // Show feedback UI for newly geocoded addresses (if not already given feedback)
+    if (!addressFeedbackGiven && address !== 'Address unavailable' && confidence === 'high') {
+      setShowAddressFeedback(true);
+      setTimeout(() => setShowAddressFeedback(false), 10000);
     }
   };
 
@@ -252,7 +384,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
         );
 
         if (distance <= 50) {
-          console.log(`✅ Using verified address (${distance.toFixed(0)}m away, verified ${verified.verified_count}x)`);
+          // console.log(`✅ Using verified address (${distance.toFixed(0)}m away, verified ${verified.verified_count}x)`);
           return verified.address;
         }
       }
@@ -297,7 +429,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
            VALUES (?, ?, ?, 1, ?, ?);`,
           [latitude, longitude, address, now, now]
         );
-        console.log('✅ Saved verified address:', address);
+        // console.log('✅ Saved verified address:', address);
       }
     } catch (error) {
       console.error('Error saving verified address:', error);
@@ -319,7 +451,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
          WHERE id = ?;`,
         [now, id]
       );
-      console.log('✅ Incremented verification count');
+      // console.log('✅ Incremented verification count');
     } catch (error) {
       console.error('Error incrementing verification count:', error);
     }
@@ -368,7 +500,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   // ---------- Database Functions ----------
   const initializeDatabase = async () => {
     try {
-      console.log('🗄️ MultiModalLocationTracker: Getting database connection...');
+      // console.log('🗄️ MultiModalLocationTracker: Getting database connection...');
       const database = await dbManager.getDatabase();
       db.current = database;
 
@@ -387,7 +519,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       `);
 
       await updateUnsyncedCount();
-      console.log('✅ MultiModalLocationTracker: Database initialized');
+      // console.log('✅ MultiModalLocationTracker: Database initialized');
     } catch (error) {
       console.error("Database initialization error:", error);
     }
@@ -526,13 +658,14 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
     if (!networkStatus.isConnected || !currentLocation?.latitude) return;
 
     try {
-      console.log('🔄 Auto-syncing data...');
+      // console.log('🔄 Auto-syncing data...');
 
+      const FETCH_RADIUS = 5000; // 5km radius for mechanics and landmarks
       // Sync landmarks
       const landmarkResult = await authService.getNearbyLandmarks(
         currentLocation.latitude,
         currentLocation.longitude,
-        10000 // 10km radius
+        FETCH_RADIUS
       );
 
       if (landmarkResult.success && landmarkResult.data) {
@@ -559,7 +692,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       // Sync location history
       await syncWithBackend();
 
-      console.log('✅ Auto-sync completed');
+      // console.log('✅ Auto-sync completed');
     } catch (error) {
       console.error('Auto-sync error:', error);
     }
@@ -627,7 +760,7 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
     try {
       const token = await getToken();
       if (!token) {
-        console.log('No auth token, skipping sync');
+        // console.log('No auth token, skipping sync');
         return;
       }
 
@@ -672,10 +805,10 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   const startSyncTimer = () => {
     if (syncTimer.current) return;
 
-    // Sync every 5 minutes (300000 ms)
+    // Sync every 10 minutes (600000 ms)
     syncTimer.current = setInterval(() => {
       autoSyncData();
-    }, 300000); // 5 minutes
+    }, 600000); // 10 minutes
 
     // Also do initial sync
     setTimeout(() => {
@@ -715,67 +848,107 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   // ---------- Location Initialization ----------
   const initializeLocationTracking = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // Check current permissions first
+      const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+
+      let status = existingStatus;
+      if (status !== 'granted') {
+        // Add a small delay for Android to ensure the activity is ready/focused
+        // before showing the system permission dialog. This prevents the NPE.
+        if (Platform.OS === 'android') {
+          await new Promise(resolve => setTimeout(resolve, 800));
+        }
+
+        try {
+          const result = await Location.requestForegroundPermissionsAsync();
+          status = result.status;
+        } catch (error) {
+          console.error("Error requesting foreground permissions:", error);
+          // If the request fails but we already have permission, might be fine
+          const { status: retryStatus } = await Location.getForegroundPermissionsAsync();
+          status = retryStatus;
+        }
+      }
+
       if (status !== "granted") {
-        Alert.alert("Permission denied", "Location permission is required");
+        Alert.alert("Permission denied", "Location permission is required to provide navigation and finding mechanics nearby.");
         return;
       }
       setPermissionGranted(true);
       setInitStatus('Waiting for GPS fix...');
 
+      // Get initial high-accuracy GPS fix before starting tracking
       try {
-        const initialLocation = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.BestForNavigation,
+        const initialLocation = await getInitialHighAccuracyLocation();
+
+        setLocationSources((prev) => ({
+          ...prev,
+          gps: {
+            latitude: initialLocation.latitude,
+            longitude: initialLocation.longitude,
+            accuracy: initialLocation.accuracy,
+            timestamp: initialLocation.timestamp,
+            source: 'gps',
+            confidence: 'high',
+          },
+        }));
+
+        // Initialize Kalman filters with initial position
+        kalmanLat.current.reset(initialLocation.latitude);
+        kalmanLng.current.reset(initialLocation.longitude);
+
+        // Trigger immediate update so UI doesn't wait for fusion interval
+        const initialLoc = {
+          latitude: initialLocation.latitude,
+          longitude: initialLocation.longitude,
+          accuracy: initialLocation.accuracy,
+        };
+
+        setCurrentLocation(initialLoc);
+        if (onLocationUpdate) onLocationUpdate(initialLoc);
+
+        // Also trigger reverse geocode immediately
+        reverseGeocode(initialLocation.latitude, initialLocation.longitude).then(address => {
+          const locationWithAddress = { ...initialLoc, address };
+          setCurrentLocation(locationWithAddress);
+          if (onLocationUpdate) onLocationUpdate(locationWithAddress);
         });
 
-        if (initialLocation?.coords) {
-          const { latitude, longitude, accuracy } = initialLocation.coords;
-          kalmanLat.current.reset(latitude);
-          kalmanLng.current.reset(longitude);
-          sensorData.current.lastPosition = { lat: latitude, lng: longitude };
-
-          // Get initial address
-          const address = await reverseGeocode(latitude, longitude);
-
-          setCurrentLocation({
-            latitude,
-            longitude,
-            accuracy: accuracy || 100,
-            address,
-          });
-
-          setInitStatus('GPS acquired. Tracking active.');
-
-          if (onLocationUpdate) {
-            onLocationUpdate({
-              latitude,
-              longitude,
-              accuracy: accuracy || 100,
-            });
-          }
-        }
-      } catch (e) {
-        console.log("Waiting for initial GPS fix:", e);
-        setInitStatus('Acquiring GPS signal...');
+        // console.log('✅ Initial high-accuracy location acquired');
+      } catch (error) {
+        console.error('Failed to get initial location:', error);
       }
 
       netInfoUnsubscribe.current = NetInfo.addEventListener((state) => {
-        const previouslyDisconnected = !networkStatus.isConnected;
         const nowOnline = !!state.isConnected;
-        setNetworkStatus({
+        const newStatus = {
           isConnected: nowOnline,
           type: state.type || "none",
-        });
-        if (previouslyDisconnected && nowOnline) {
+        };
+
+        console.log(`📡 Network: ${nowOnline ? 'Online' : 'Offline'} (${state.type})`);
+
+        setNetworkStatus(newStatus);
+        networkStatusRef.current = newStatus;
+
+        if (nowOnline) {
           syncWithBackend();
         }
       });
 
       try {
-        bleManager.current = new BleManager();
-        await bleManager.current.state();
+        // Only initialize if module exists and we can create an instance
+        if (BleManager) {
+          bleManager.current = new BleManager();
+          // Check if createClient method exists (indicates native module is linked)
+          if (bleManager.current) {
+            await bleManager.current.state();
+            // console.log('✅ BLE Manager initialized');
+          }
+        }
       } catch (error) {
-        console.error("BLE init error:", error);
+        console.warn("BLE native module initialization failed:", error.message);
+        bleManager.current = null;
       }
 
       setIsTracking(true);
@@ -794,63 +967,53 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
   // ---------- GPS Tracking ----------
   const startGPSTracking = async () => {
     try {
+      // Enhanced GPS tracking with better accuracy
       subscriptions.current.location = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 1000,
-          distanceInterval: 1,
+          accuracy: Location.Accuracy.Balanced, // Lower accuracy to save battery
+          timeInterval: 300000, // 5 minutes
+          distanceInterval: 100, // 100 meters
         },
         (location) => {
-          if (location?.coords) {
-            const gpsData = {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-              accuracy: location.coords.accuracy || 10,
-              timestamp: Date.now(),
-              source: "gps",
-            };
-            setLocationSources((prev) => ({ ...prev, gps: gpsData }));
+          const { latitude, longitude, accuracy, altitude, heading, speed } = location.coords;
 
-            // Update last known position for dead reckoning
-            sensorData.current.lastPosition = {
-              lat: location.coords.latitude,
-              lng: location.coords.longitude,
-            };
+          // Only accept GPS fixes with reasonable accuracy
+          const maxAcceptableAccuracy = 100; // meters
+          if (accuracy > maxAcceptableAccuracy) {
+            // console.log(`⚠️ GPS accuracy too low (${accuracy.toFixed(1)}m), skipping update`);
+            return;
           }
+
+          // Update GPS source with confidence level
+          let confidenceLevel = 'high';
+          if (accuracy > 50) confidenceLevel = 'medium';
+          if (accuracy > 100) confidenceLevel = 'low';
+
+          setLocationSources((prev) => ({
+            ...prev,
+            gps: {
+              latitude,
+              longitude,
+              accuracy,
+              altitude: altitude || null,
+              heading: heading || null,
+              speed: speed || null,
+              timestamp: Date.now(),
+              source: 'gps',
+              confidence: confidenceLevel,
+            },
+          }));
+
+          // Update dead reckoning base position when GPS is good
+          if (accuracy < 20) {
+            sensorData.current.lastPosition = { lat: latitude, lng: longitude };
+          }
+
+          // console.log(`📍 GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (±${accuracy.toFixed(1)}m, ${confidenceLevel} confidence)`);
         }
       );
     } catch (e) {
-      console.warn("GPS tracking failed, trying fallback", e);
-      try {
-        subscriptions.current.location = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: 5000,
-            distanceInterval: 5,
-          },
-          (location) => {
-            if (location?.coords) {
-              setLocationSources((prev) => ({
-                ...prev,
-                gps: {
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
-                  accuracy: location.coords.accuracy || 50,
-                  timestamp: Date.now(),
-                  source: "gps",
-                },
-              }));
-
-              sensorData.current.lastPosition = {
-                lat: location.coords.latitude,
-                lng: location.coords.longitude,
-              };
-            }
-          }
-        );
-      } catch (err) {
-        console.error("GPS fallback failed", err);
-      }
+      // console.error("GPS tracking failed", e);
     }
   };
 
@@ -914,9 +1077,10 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
         }
       );
 
+      // Update position every 5 minutes from step count (Dead Reckoning)
       subscriptions.current.deadReckoning = setInterval(
         updatePositionFromStep,
-        2000
+        300000
       );
     } catch (error) {
       console.error("Sensor init error:", error);
@@ -1013,9 +1177,9 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
           }));
         }
       } catch (e) {
-        console.error("WiFi scan error:", e);
+        // console.error("WiFi scan error:", e);
       }
-    }, 5000);
+    }, 300000);
   };
 
 
@@ -1075,18 +1239,19 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
         }
       });
     } catch (err) {
-      console.error("BLE scan error:", err);
+      // console.error("BLE scan error:", err);
     }
   };
 
   // ---------- Location Fusion (Real Data Only) ----------
   const startLocationFusion = () => {
-    subscriptions.current.fusion = setInterval(fuseLocationData, 1000);
+    subscriptions.current.fusion = setInterval(fuseLocationData, 30000); // 30 seconds
   };
 
   const fuseLocationData = () => {
     // Only use sources with valid latitude/longitude coordinates
-    const sources = Object.values(locationSources).filter(
+    // Use ref to avoid stale closures in the interval
+    const sources = Object.values(locationSourcesRef.current).filter(
       (source) =>
         source?.timestamp > Date.now() - SOURCE_TIMEOUT_MS &&
         source.latitude !== null &&
@@ -1095,16 +1260,30 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
         !isNaN(source.longitude)
     );
 
-    if (sources.length === 0) return;
+    if (sources.length === 0) {
+      // Periodic log to help debugging if no sources are found
+      // if (Math.random() < 0.1) console.log('🔍 Fusion: Waiting for valid location sources...');
+      return;
+    }
 
-    // Sort by accuracy and recency
+    // Enhanced sorting with confidence level
     sources.sort((a, b) => {
-      const accuracyDiff = (a.accuracy || 100) - (b.accuracy || 100);
+      const confidenceWeight = { high: 1, medium: 1.5, low: 2 };
+
+      const scoreA = (a.accuracy || 100) * (confidenceWeight[a.confidence] || 1.5);
+      const scoreB = (b.accuracy || 100) * (confidenceWeight[b.confidence] || 1.5);
+
+      const accuracyDiff = scoreA - scoreB;
       const timeDiff = (b.timestamp - a.timestamp) / 1000;
-      return accuracyDiff + timeDiff * 10;
+
+      return accuracyDiff + timeDiff * 5; // Reduced time penalty
     });
 
     const primarySource = sources[0];
+
+    // Log which source is being used
+    // console.log(`🎯 Using ${primarySource.source} as primary (accuracy: ${primarySource.accuracy?.toFixed(1)}m, confidence: ${primarySource.confidence || 'unknown'})`);
+
     const noise = NOISE_MAP[primarySource.source] || 0.05;
     kalmanLat.current.setMeasurementNoise(noise);
     kalmanLng.current.setMeasurementNoise(noise);
@@ -1127,6 +1306,8 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
 
       filteredLat = weightedLat / totalWeight;
       filteredLng = weightedLng / totalWeight;
+
+      // console.log(`🔀 Fused ${sources.length} sources`);
     }
 
     const fusedLocation = {
@@ -1134,24 +1315,50 @@ const MultiModalLocationTracker = forwardRef(({ onLocationUpdate, onLandmarksUpd
       longitude: filteredLng,
       accuracy:
         sources.length > 1
-          ? Math.max(5, primarySource.accuracy * 0.8)
+          ? Math.max(5, primarySource.accuracy * 0.7)
           : primarySource.accuracy,
     };
 
+    // Only update if location moved > 5m or enough time passed
+    const lastLat = sensorData.current.lastPosition?.lat;
+    const lastLng = sensorData.current.lastPosition?.lng;
+    const distanceMoved = lastLat && lastLng
+      ? getDistanceInMeters(lastLat, lastLng, filteredLat, filteredLng)
+      : Infinity;
+
+    if (distanceMoved < 5) return;
+
     // Get address asynchronously (don't block location update)
     reverseGeocode(filteredLat, filteredLng).then((address) => {
-      setCurrentLocation((prev) => ({
-        ...prev,
+      const locationWithAddress = {
+        ...fusedLocation,
         address,
+        addressSource: addressSourceRef.current
+      };
+
+      setCurrentLocation(prev => ({
+        ...prev,
+        ...locationWithAddress
       }));
+
+      if (onLocationUpdate) {
+        onLocationUpdate(locationWithAddress);
+      }
     });
 
-    setCurrentLocation(fusedLocation);
+    // Update location state immediately (without waiting for address)
+    const partialUpdate = {
+      ...fusedLocation,
+      address: currentAddressRef.current,
+      addressSource: addressSourceRef.current
+    };
+
+    setCurrentLocation(prev => ({ ...prev, ...fusedLocation, address: currentAddressRef.current }));
     sensorData.current.lastPosition = { lat: filteredLat, lng: filteredLng };
     saveLocationLocally(fusedLocation);
 
     if (onLocationUpdate) {
-      onLocationUpdate(fusedLocation);
+      onLocationUpdate(partialUpdate);
     }
   };
 
