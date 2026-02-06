@@ -313,46 +313,40 @@ app.post('/api/location/reverse-geocode', authenticateToken, async (req, res) =>
       });
     }
 
-    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
-
-    if (!geoapifyApiKey) {
-      return res.status(503).json({
-        error: 'Service unavailable',
-        message: 'Geocoding service not configured'
-      });
-    }
-
-    // Call Geoapify Reverse Geocoding API
+    // Call OpenStreetMap (Nominatim) Reverse Geocoding API
     const response = await axios.get(
-      `https://api.geoapify.com/v1/geocode/reverse`,
+      `https://nominatim.openstreetmap.org/reverse`,
       {
         params: {
           lat: latitude,
           lon: longitude,
-          apiKey: geoapifyApiKey,
+          format: 'jsonv2',
+        },
+        headers: {
+          'User-Agent': 'Orb-App/1.0'
         },
         timeout: 10000,
       }
     );
 
-    if (response.data.features && response.data.features.length > 0) {
-      const result = response.data.features[0].properties;
+    if (response.data) {
+      const result = response.data;
+      const address = result.display_name;
 
       res.json({
         success: true,
         data: {
-          address: result.formatted,
+          address,
           components: {
-            streetNumber: result.housenumber || '',
-            route: result.street || '',
-            city: result.city || '',
-            state: result.state || '',
-            country: result.country || '',
-            postalCode: result.postcode || '',
+            streetNumber: result.address?.house_number || '',
+            route: result.address?.road || '',
+            city: result.address?.city || result.address?.town || result.address?.village || '',
+            state: result.address?.state || '',
+            country: result.address?.country || '',
+            postalCode: result.address?.postcode || '',
           },
           placeId: result.place_id,
-          locationType: result.rank?.confidence_type || 'unknown',
-          source: 'geoapify',
+          source: 'osm',
         },
       });
       return;
@@ -386,36 +380,38 @@ app.post('/api/geocode/reverse', async (req, res) => {
       });
     }
 
-    // Use Geoapify for reverse geocoding
-    const GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY;
-    const geoapifyUrl = `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${GEOAPIFY_API_KEY}`;
+    // Use Nominatim for reverse geocoding
+    const osmUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2`;
 
     try {
-      const geoapifyResponse = await axios.get(geoapifyUrl, { timeout: 10000 });
-      if (geoapifyResponse.status === 200) {
-        const data = geoapifyResponse.data;
-        if (data.features && data.features.length > 0) {
-          const result = data.features[0].properties;
-          return res.json({
-            success: true,
-            data: {
-              address: result.formatted,
-              components: {
-                streetNumber: result.housenumber || '',
-                route: result.street || '',
-                city: result.city || '',
-                state: result.state || '',
-                country: result.country || '',
-                postalCode: result.postcode || '',
-              },
-              placeId: result.place_id,
-              source: 'geoapify'
-            }
-          });
-        }
+      const osmResponse = await axios.get(osmUrl, {
+        headers: {
+          'User-Agent': 'Orb-App/1.0'
+        },
+        timeout: 10000
+      });
+
+      if (osmResponse.status === 200 && osmResponse.data) {
+        const result = osmResponse.data;
+        return res.json({
+          success: true,
+          data: {
+            address: result.display_name,
+            components: {
+              streetNumber: result.address?.house_number || '',
+              route: result.address?.road || '',
+              city: result.address?.city || result.address?.town || result.address?.village || '',
+              state: result.address?.state || '',
+              country: result.address?.country || '',
+              postalCode: result.address?.postcode || '',
+            },
+            placeId: result.place_id,
+            source: 'osm'
+          }
+        });
       }
-    } catch (geoError) {
-      console.error('Geoapify geocoding failed:', geoError.message);
+    } catch (osmError) {
+      console.error('OSM geocoding failed:', osmError.message);
     }
 
     res.status(404).json({
@@ -455,18 +451,9 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
       });
     }
 
-    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
-
-    if (!geoapifyApiKey) {
-      return res.status(503).json({
-        error: 'Service unavailable',
-        message: 'Geocoding service not configured'
-      });
-    }
-
     const results = [];
 
-    // Process each location using Geoapify
+    // Process each location using Nominatim
     for (const loc of locations) {
       const { latitude, longitude, id } = loc;
 
@@ -481,25 +468,28 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
 
       try {
         const response = await axios.get(
-          `https://api.geoapify.com/v1/geocode/reverse`,
+          `https://nominatim.openstreetmap.org/reverse`,
           {
             params: {
               lat: latitude,
               lon: longitude,
-              apiKey: geoapifyApiKey,
+              format: 'jsonv2',
+            },
+            headers: {
+              'User-Agent': 'Orb-App/1.0'
             },
             timeout: 10000,
           }
         );
 
-        if (response.data.features && response.data.features.length > 0) {
-          const result = response.data.features[0].properties;
+        if (response.data) {
+          const result = response.data;
           results.push({
             id: id || null,
             success: true,
-            address: result.formatted,
+            address: result.display_name,
             placeId: result.place_id,
-            source: 'geoapify',
+            source: 'osm',
           });
         } else {
           results.push({
@@ -509,8 +499,9 @@ app.post('/api/location/batch-reverse-geocode', authenticateToken, async (req, r
           });
         }
 
-        // Rate limiting: wait 100ms between requests
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Nominatim rate limiting: max 1 request/second
+        // Wait 1000ms between requests to be safe
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error) {
         results.push({
           id: id || null,
