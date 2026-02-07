@@ -322,10 +322,15 @@ export const updateProfile = async (req, res) => {
     let newToken = null;
 
     if (updates.role === 'mechanic' || user.role === 'mechanic') {
+      console.log('🔧 [updateProfile] Processing mechanic profile update');
+      console.log('   User role:', user.role);
+      console.log('   mechanicData received:', mechanicData ? JSON.stringify(mechanicData, null, 2) : 'null');
+
       const existingMechanic = await Mechanic.findOne({ userId: user._id });
 
       if (!existingMechanic && updates.role === 'mechanic') {
         // Create NEW mechanic profile
+        console.log('🆕 [updateProfile] Creating NEW mechanic profile');
         mechanicProfile = new Mechanic({
           userId: user._id,
           name: mechanicData?.name || user.username,
@@ -341,16 +346,17 @@ export const updateProfile = async (req, res) => {
           available: mechanicData?.available !== undefined ? mechanicData.available : true
         });
         await mechanicProfile.save();
+        console.log('✅ [updateProfile] New mechanic profile created with ID:', mechanicProfile._id);
       } else if (existingMechanic) {
         // UPDATE existing mechanic profile if location provided
-        console.log('🔧 [updateProfile] Updating existing mechanic ID:', existingMechanic._id);
-        console.log('   Incoming mechanicData:', JSON.stringify(mechanicData, null, 2));
+        console.log('🔄 [updateProfile] Updating existing mechanic ID:', existingMechanic._id);
+        console.log('   Current location: [lat:', existingMechanic.location.coordinates[1], ', lng:', existingMechanic.location.coordinates[0], ']');
 
         if (mechanicData?.latitude !== undefined && mechanicData?.longitude !== undefined) {
           const newLat = Number(mechanicData.latitude);
           const newLng = Number(mechanicData.longitude);
 
-          console.log(`   Updating location from [${existingMechanic.location.coordinates[1]}, ${existingMechanic.location.coordinates[0]}] to [${newLat}, ${newLng}]`);
+          console.log(`   ➡️  Updating location to [lat: ${newLat}, lng: ${newLng}]`);
 
           existingMechanic.location = {
             type: 'Point',
@@ -365,12 +371,19 @@ export const updateProfile = async (req, res) => {
           await existingMechanic.save();
           console.log('✅ [updateProfile] Mechanic profile saved successfully');
         } else {
-          console.log('⚠️ [updateProfile] No location data provided in mechanicData, skipping location update');
+          console.log('⚠️ [updateProfile] No location data provided in mechanicData, updating other fields only');
           // Still update other fields if provided
-          if (mechanicData?.name) existingMechanic.name = mechanicData.name;
-          if (mechanicData?.phone) existingMechanic.phone = mechanicData.phone;
+          if (mechanicData?.name) {
+            console.log('   Updating name to:', mechanicData.name);
+            existingMechanic.name = mechanicData.name;
+          }
+          if (mechanicData?.phone) {
+            console.log('   Updating phone to:', mechanicData.phone);
+            existingMechanic.phone = mechanicData.phone;
+          }
           if (mechanicData?.available !== undefined) existingMechanic.available = mechanicData.available;
           await existingMechanic.save();
+          console.log('✅ [updateProfile] Mechanic profile updated (without location)');
         }
         mechanicProfile = existingMechanic;
       }
