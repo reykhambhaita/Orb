@@ -223,7 +223,8 @@ export const login = async (req, res) => {
         },
         specialties: mechanicProfile.specialties,
         available: mechanicProfile.available,
-        upiId: mechanicProfile.upiId
+        upiId: mechanicProfile.upiId,
+        upiQrCode: mechanicProfile.upiQrCode
       } : null
     });
   } catch (error) {
@@ -266,7 +267,8 @@ export const getCurrentUser = async (req, res) => {
         },
         specialties: mechanicProfile.specialties,
         available: mechanicProfile.available,
-        upiId: mechanicProfile.upiId
+        upiId: mechanicProfile.upiId,
+        upiQrCode: mechanicProfile.upiQrCode
       } : null
     });
   } catch (error) {
@@ -456,7 +458,8 @@ export const updateProfile = async (req, res) => {
         },
         specialties: mechanicProfile.specialties,
         available: mechanicProfile.available,
-        upiId: mechanicProfile.upiId
+        upiId: mechanicProfile.upiId,
+        upiQrCode: mechanicProfile.upiQrCode
       } : null
     });
   } catch (error) {
@@ -682,7 +685,8 @@ export const verifyOTP = async (req, res) => {
         },
         specialties: mechanicProfile.specialties,
         available: mechanicProfile.available,
-        upiId: mechanicProfile.upiId
+        upiId: mechanicProfile.upiId,
+        upiQrCode: mechanicProfile.upiQrCode
       } : null
     });
   } catch (error) {
