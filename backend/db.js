@@ -577,7 +577,7 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
 
   // console.log('📊 [getNearbyMechanics] Retrieved all mechanics for manual calculation:', allMechanics.length);
 
-  const mechanicsWithDistance = allMechanics.map(mechanic => {
+  const mechanicsWithDistance = allMechanics.map((mechanic, index) => {
     const mechLat = mechanic.location.coordinates[1]; // GeoJSON: [longitude, latitude]
     const mechLng = mechanic.location.coordinates[0];
 
@@ -593,7 +593,7 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
     const distance = R * c; // Distance in meters
 
     // Log first calculation for debugging
-    if (!mechanicsWithDistance.logged) {
+    if (index === 0) {
       console.log('📏 Backend distance calculation example:', {
         searchPoint: { lat, lng },
         mechanicPoint: { lat: mechLat, lng: mechLng },
@@ -601,7 +601,6 @@ export const getNearbyMechanics = async (lat, lng, radius = 5000) => {
         distanceKm: (distance / 1000).toFixed(2),
         distanceM: distance.toFixed(0)
       });
-      mechanicsWithDistance.logged = true;
     }
 
     return { mechanic, distance };

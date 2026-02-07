@@ -343,14 +343,33 @@ export const updateProfile = async (req, res) => {
         await mechanicProfile.save();
       } else if (existingMechanic) {
         // UPDATE existing mechanic profile if location provided
-        if (mechanicData?.latitude && mechanicData?.longitude) {
+        console.log('🔧 [updateProfile] Updating existing mechanic ID:', existingMechanic._id);
+        console.log('   Incoming mechanicData:', JSON.stringify(mechanicData, null, 2));
+
+        if (mechanicData?.latitude !== undefined && mechanicData?.longitude !== undefined) {
+          const newLat = Number(mechanicData.latitude);
+          const newLng = Number(mechanicData.longitude);
+
+          console.log(`   Updating location from [${existingMechanic.location.coordinates[1]}, ${existingMechanic.location.coordinates[0]}] to [${newLat}, ${newLng}]`);
+
           existingMechanic.location = {
             type: 'Point',
-            coordinates: [
-              Number(mechanicData.longitude),
-              Number(mechanicData.latitude)
-            ]
+            coordinates: [newLng, newLat]
           };
+
+          if (mechanicData.name) existingMechanic.name = mechanicData.name;
+          if (mechanicData.phone) existingMechanic.phone = mechanicData.phone;
+          if (mechanicData.specialties) existingMechanic.specialties = mechanicData.specialties;
+          if (mechanicData.available !== undefined) existingMechanic.available = mechanicData.available;
+
+          await existingMechanic.save();
+          console.log('✅ [updateProfile] Mechanic profile saved successfully');
+        } else {
+          console.log('⚠️ [updateProfile] No location data provided in mechanicData, skipping location update');
+          // Still update other fields if provided
+          if (mechanicData?.name) existingMechanic.name = mechanicData.name;
+          if (mechanicData?.phone) existingMechanic.phone = mechanicData.phone;
+          if (mechanicData?.available !== undefined) existingMechanic.available = mechanicData.available;
           await existingMechanic.save();
         }
         mechanicProfile = existingMechanic;
