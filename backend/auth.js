@@ -114,24 +114,46 @@ export const signup = async (req, res) => {
     // NEW: If mechanic role, create mechanic profile automatically
     let mechanicProfile = null;
     if (userRole === 'mechanic') {
-      // Create mechanic profile with default or provided data
+      // Validate that mechanic data includes valid location
+      if (!mechanicData?.latitude || !mechanicData?.longitude) {
+        return res.status(400).json({
+          error: 'Mechanics must provide valid location coordinates (latitude and longitude)'
+        });
+      }
+
+      // Validate coordinates are not (0, 0)
+      const lat = Number(mechanicData.latitude);
+      const lng = Number(mechanicData.longitude);
+
+      if (lat === 0 && lng === 0) {
+        return res.status(400).json({
+          error: 'Invalid location coordinates. Please enable location services and try again.'
+        });
+      }
+
+      // Validate coordinates are within valid ranges
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({
+          error: 'Invalid location coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
+        });
+      }
+
+      // Create mechanic profile with validated data
       mechanicProfile = new Mechanic({
         userId: user._id,
-        name: mechanicData?.name || username,
-        phone: mechanicData?.phone || '',
+        name: mechanicData.name || username,
+        phone: mechanicData.phone || '',
         location: {
           type: 'Point',
-          coordinates: [
-            mechanicData?.longitude || 0,
-            mechanicData?.latitude || 0
-          ]
+          coordinates: [lng, lat]
         },
-        specialties: mechanicData?.specialties || [],
-        available: mechanicData?.available !== undefined ? mechanicData.available : true,
-        upiId: mechanicData?.upiId || ''
+        specialties: mechanicData.specialties || [],
+        available: mechanicData.available !== undefined ? mechanicData.available : true,
+        upiId: mechanicData.upiId || ''
       });
 
       await mechanicProfile.save();
+      console.log('✅ [signup] Mechanic profile created with location:', { lat, lng });
     }
 
     // Return success but no token yet, as email needs verification
@@ -329,21 +351,40 @@ export const updateProfile = async (req, res) => {
       const existingMechanic = await Mechanic.findOne({ userId: user._id });
 
       if (!existingMechanic && updates.role === 'mechanic') {
-        // Create NEW mechanic profile
         console.log('🆕 [updateProfile] Creating NEW mechanic profile');
+
+        if (!mechanicData?.latitude || !mechanicData?.longitude) {
+          return res.status(400).json({
+            error: 'Mechanics must provide valid location coordinates (latitude and longitude)'
+          });
+        }
+
+        const lat = Number(mechanicData.latitude);
+        const lng = Number(mechanicData.longitude);
+
+        if (lat === 0 && lng === 0) {
+          return res.status(400).json({
+            error: 'Invalid location coordinates. Please enable location services and try again.'
+          });
+        }
+
+        // Validate coordinates are within valid ranges
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          return res.status(400).json({
+            error: 'Invalid location coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
+          });
+        }
+
         mechanicProfile = new Mechanic({
           userId: user._id,
-          name: mechanicData?.name || user.username,
-          phone: mechanicData?.phone || '',
+          name: mechanicData.name || user.username,
+          phone: mechanicData.phone || '',
           location: {
             type: 'Point',
-            coordinates: [
-              Number(mechanicData?.longitude) || 0,
-              Number(mechanicData?.latitude) || 0
-            ]
+            coordinates: [lng, lat]
           },
-          specialties: mechanicData?.specialties || [],
-          available: mechanicData?.available !== undefined ? mechanicData.available : true
+          specialties: mechanicData.specialties || [],
+          available: mechanicData.available !== undefined ? mechanicData.available : true
         });
         await mechanicProfile.save();
         console.log('✅ [updateProfile] New mechanic profile created with ID:', mechanicProfile._id);
