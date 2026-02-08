@@ -114,25 +114,12 @@ export const signup = async (req, res) => {
     // NEW: If mechanic role, create mechanic profile automatically
     let mechanicProfile = null;
     if (userRole === 'mechanic') {
-      // Validate that mechanic data includes valid location
-      if (!mechanicData?.latitude || !mechanicData?.longitude) {
-        return res.status(400).json({
-          error: 'Mechanics must provide valid location coordinates (latitude and longitude)'
-        });
-      }
+      // Defer location validation if not provided (will be updated by background service)
+      const lat = mechanicData?.latitude ? Number(mechanicData.latitude) : 0;
+      const lng = mechanicData?.longitude ? Number(mechanicData.longitude) : 0;
 
-      // Validate coordinates are not (0, 0)
-      const lat = Number(mechanicData.latitude);
-      const lng = Number(mechanicData.longitude);
-
-      if (lat === 0 && lng === 0) {
-        return res.status(400).json({
-          error: 'Invalid location coordinates. Please enable location services and try again.'
-        });
-      }
-
-      // Validate coordinates are within valid ranges
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      // Validate coordinates are within valid ranges if provided
+      if ((lat !== 0 || lng !== 0) && (lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
         return res.status(400).json({
           error: 'Invalid location coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
         });
@@ -355,23 +342,12 @@ export const updateProfile = async (req, res) => {
       if (!existingMechanic && updates.role === 'mechanic') {
         console.log('🆕 [updateProfile] Creating NEW mechanic profile');
 
-        if (!mechanicData?.latitude || !mechanicData?.longitude) {
-          return res.status(400).json({
-            error: 'Mechanics must provide valid location coordinates (latitude and longitude)'
-          });
-        }
+        // Allow creating profile with default coordinates [0, 0] if not provided
+        const lat = mechanicData?.latitude ? Number(mechanicData.latitude) : 0;
+        const lng = mechanicData?.longitude ? Number(mechanicData.longitude) : 0;
 
-        const lat = Number(mechanicData.latitude);
-        const lng = Number(mechanicData.longitude);
-
-        if (lat === 0 && lng === 0) {
-          return res.status(400).json({
-            error: 'Invalid location coordinates. Please enable location services and try again.'
-          });
-        }
-
-        // Validate coordinates are within valid ranges
-        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        // Validate coordinates are within valid ranges if provided
+        if ((lat !== 0 || lng !== 0) && (lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
           return res.status(400).json({
             error: 'Invalid location coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.'
           });

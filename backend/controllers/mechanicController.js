@@ -18,14 +18,17 @@ export const createMechanicProfileHandler = async (req, res) => {
     const { name, phone, latitude, longitude, specialties, available } = req.body;
 
     // Validation
-    if (!name || !phone || !latitude || !longitude) {
+    if (!name || !phone) {
       return res.status(400).json({
-        error: 'Name, phone, latitude, and longitude are required'
+        error: 'Name and phone are required'
       });
     }
 
-    // Validate coordinates
-    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    const lat = latitude ? Number(latitude) : 0;
+    const lng = longitude ? Number(longitude) : 0;
+
+    // Validate coordinates if provided
+    if ((lat !== 0 || lng !== 0) && (lat < -90 || lat > 90 || lng < -180 || lng > 180)) {
       return res.status(400).json({
         error: 'Invalid coordinates'
       });
@@ -35,8 +38,8 @@ export const createMechanicProfileHandler = async (req, res) => {
     const mechanic = await createMechanicProfile(req.userId, {
       name,
       phone,
-      latitude,
-      longitude,
+      latitude: lat,
+      longitude: lng,
       specialties: Array.isArray(specialties) ? specialties : [],
       available: available !== undefined ? available : true
     });
