@@ -514,7 +514,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
       <View style={styles.mechanicsContainer}>
         <View style={styles.containerHeader}>
           <View style={styles.headerTitleRow}>
-            <Text style={styles.containerTitle}>
+            <Text style={[styles.containerTitle, { color: theme.text }]}>
               {mechanics.length > 0
                 ? `${mechanics.length} Mechanic${mechanics.length > 1 ? 's' : ''} nearby`
                 : 'Find Mechanics'}
@@ -523,15 +523,15 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
           {searchLocationName && (
             <View style={styles.searchLocationRow}>
               <View style={styles.searchLocationBadge}>
-                <Ionicons name="location" size={12} color="#0A4D4D" />
-                <Text style={styles.searchLocationText}>{searchLocationName}</Text>
+                <Ionicons name="location" size={12} color={isDark ? '#FFFFFF' : '#0A4D4D'} />
+                <Text style={[styles.searchLocationText, { color: theme.textSecondary }]}>{searchLocationName}</Text>
               </View>
               <TouchableOpacity
-                style={styles.resetButton}
+                style={[styles.resetButton, { backgroundColor: isDark ? '#222222' : '#f3f4f6' }]}
                 onPress={onResetToGPS}
               >
-                <Ionicons name="navigate" size={14} color="#0A4D4D" />
-                <Text style={styles.resetButtonText}>My Location</Text>
+                <Ionicons name="navigate" size={14} color={isDark ? '#FFFFFF' : '#0A4D4D'} />
+                <Text style={[styles.resetButtonText, { color: theme.text }]}>My Location</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -644,9 +644,9 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.modalDistance}>
-                <Ionicons name="location-outline" size={18} color={isDark ? '#A0A0A0' : '#6B7280'} />
-                <Text style={[styles.modalDistanceText, { color: isDark ? '#A0A0A0' : '#6B7280' }]}>
+              <View style={[styles.modalDistance, { backgroundColor: isDark ? '#111111' : '#F9FAFB' }]}>
+                <Ionicons name="location-outline" size={18} color={isDark ? '#FFFFFF' : '#6B7280'} />
+                <Text style={[styles.modalDistanceText, { color: isDark ? '#FFFFFF' : '#6B7280' }]}>
                   {selectedMechanic.distanceFromUser != null
                     ? selectedMechanic.distanceFromUser < 1
                       ? `${(selectedMechanic.distanceFromUser * 1000).toFixed(0)} meters away`
@@ -657,7 +657,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
 
               <View style={styles.modalActions}>
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.callButton]}
+                  style={[styles.actionButton, styles.callButton, isDark && { backgroundColor: '#FFFFFF' }]}
                   onPress={() => {
                     closeDetailModal();
                     handleCallMechanic(
@@ -667,12 +667,12 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                     );
                   }}
                 >
-                  <Ionicons name="call" size={20} color="#FFFFFF" />
-                  <Text style={styles.callButtonText}>Call Now</Text>
+                  <Ionicons name="call" size={20} color={isDark ? '#000000' : '#FFFFFF'} />
+                  <Text style={[styles.callButtonText, isDark && { color: '#000000' }]}>Call Now</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.walletButton]}
+                  style={[styles.actionButton, styles.walletButton, isDark && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }]}
                   onPress={() => {
                     closeDetailModal();
                     navigation.navigate('Payment', {
@@ -685,11 +685,11 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                   }}
                 >
                   <Ionicons name="wallet-outline" size={20} color="#000000" />
-                  <Text style={styles.walletButtonText}>Payment</Text>
+                  <Text style={[styles.walletButtonText, { color: '#000000' }]}>Payment</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.actionButton, styles.reviewButton]}
+                  style={[styles.actionButton, styles.reviewButton, isDark && { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }]}
                   onPress={() => {
                     closeDetailModal();
                     handleEndCallAndReview(
@@ -699,7 +699,7 @@ const MechanicFinder = forwardRef(({ searchLocation, searchLocationName, onReset
                   }}
                 >
                   <Ionicons name="star-outline" size={20} color="#000000" />
-                  <Text style={styles.reviewButtonText}>Leave a review</Text>
+                  <Text style={[styles.reviewButtonText, { color: '#000000' }]}>Leave a review</Text>
                 </TouchableOpacity>
               </View>
             </Animated.View>

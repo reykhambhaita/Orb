@@ -244,7 +244,7 @@ const ProfileScreen = ({ navigation }) => {
     );
   }
 
-  const dynamicStyles = { ...styles(theme), ...upiStyles(theme) };
+  const dynamicStyles = { ...styles(theme), ...upiStyles(theme, isDark) };
 
   return (
     <View style={dynamicStyles.container}>
@@ -797,27 +797,27 @@ const ProfileScreen = ({ navigation }) => {
                 <Text style={dynamicStyles.featureHeading}>Core Features</Text>
 
                 <View style={dynamicStyles.featureItem}>
-                  <Ionicons name="location" size={18} color="#111" />
+                  <Ionicons name="location" size={18} color={isDark ? '#fff' : '#111'} />
                   <Text style={dynamicStyles.featureText}>Real-time location tracking & assistance</Text>
                 </View>
 
                 <View style={dynamicStyles.featureItem}>
-                  <Ionicons name="map" size={18} color="#111" />
+                  <Ionicons name="map" size={18} color={isDark ? '#fff' : '#111'} />
                   <Text style={dynamicStyles.featureText}>Offline mapping for remote areas</Text>
                 </View>
 
                 <View style={dynamicStyles.featureItem}>
-                  <Ionicons name="search" size={18} color="#111" />
+                  <Ionicons name="search" size={18} color={isDark ? '#fff' : '#111'} />
                   <Text style={dynamicStyles.featureText}>Landmark discovery & navigation</Text>
                 </View>
 
                 <View style={dynamicStyles.featureItem}>
-                  <Ionicons name="card" size={18} color="#111" />
+                  <Ionicons name="card" size={18} color={isDark ? '#fff' : '#111'} />
                   <Text style={dynamicStyles.featureText}>Secure & instant UPI payments</Text>
                 </View>
 
                 <View style={dynamicStyles.featureItem}>
-                  <Ionicons name="star" size={18} color="#111" />
+                  <Ionicons name="star" size={18} color={isDark ? '#fff' : '#111'} />
                   <Text style={dynamicStyles.featureText}>Robust review & rating system</Text>
                 </View>
               </View>
@@ -1210,43 +1210,43 @@ const styles = (theme) => StyleSheet.create({
 export default ProfileScreen;
 
 /* UPI Additional Styles */
-const upiStyles = (theme) => ({
+const upiStyles = (theme, isDark) => ({
   upiInfoContainer: { paddingBottom: 40 },
-  qrContainer: { alignItems: 'center', padding: 24, backgroundColor: '#ffffff', borderRadius: 24, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
-  qrHeading: { fontSize: 14, fontWeight: '700', color: '#111111', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 },
+  qrContainer: { alignItems: 'center', padding: 24, backgroundColor: isDark ? '#1a1a1a' : '#ffffff', borderRadius: 24, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5, borderWidth: isDark ? 1 : 0, borderColor: isDark ? '#333' : 'transparent' },
+  qrHeading: { fontSize: 14, fontWeight: '700', color: isDark ? '#ffffff' : '#111111', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 },
   qrImage: { width: 240, height: 240, marginBottom: 16 },
-  upiIdText: { fontSize: 16, fontWeight: '600', color: '#111111', backgroundColor: '#f3f4f6', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
+  upiIdText: { fontSize: 16, fontWeight: '600', color: isDark ? '#ffffff' : '#111111', backgroundColor: isDark ? '#333' : '#f3f4f6', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
   upiPlaceholder: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, backgroundColor: theme.inputBg, borderRadius: 20, borderWidth: 1, borderColor: theme.border, borderStyle: 'dashed', marginBottom: 24 },
   upiPlaceholderText: { fontSize: 14, color: theme.textTertiary, marginTop: 12 },
   upiForm: { marginTop: 8 },
   upiHelpText: { fontSize: 12, color: theme.textSecondary, marginTop: 8, marginBottom: 20, lineHeight: 18 },
-  tapToExpandText: { fontSize: 10, color: '#888', marginTop: 12, fontWeight: '500' },
+  tapToExpandText: { fontSize: 10, color: isDark ? '#aaa' : '#888', marginTop: 12, fontWeight: '500' },
   removeButton: { width: 56, height: 56, backgroundColor: '#ef4444', borderRadius: 12, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   expandedQrOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 30 },
-  expandedQrContent: { backgroundColor: '#fff', borderRadius: 24, padding: 30, alignItems: 'center', width: '100%' },
-  expandedQrTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 20, fontFamily: 'RussoOne_400Regular' },
+  expandedQrContent: { backgroundColor: isDark ? '#1a1a1a' : '#fff', borderRadius: 24, padding: 30, alignItems: 'center', width: '100%' },
+  expandedQrTitle: { fontSize: 18, fontWeight: '700', color: isDark ? '#fff' : '#111', marginBottom: 20, fontFamily: 'RussoOne_400Regular' },
   largeQrContainer: { padding: 15, backgroundColor: '#fff', borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 3 },
   largeQr: { width: 250, height: 250 },
-  expandedQrHint: { fontSize: 12, color: '#888', marginTop: 20, textAlign: 'center' },
-  closeExpandedButton: { marginTop: 30, paddingVertical: 12, paddingHorizontal: 40, backgroundColor: '#111', borderRadius: 12 },
-  closeExpandedText: { color: '#fff', fontWeight: '600' },
+  expandedQrHint: { fontSize: 12, color: isDark ? '#aaa' : '#888', marginTop: 20, textAlign: 'center' },
+  closeExpandedButton: { marginTop: 30, paddingVertical: 12, paddingHorizontal: 40, backgroundColor: isDark ? '#fff' : '#111', borderRadius: 12 },
+  closeExpandedText: { color: isDark ? '#000' : '#fff', fontWeight: '600' },
   /* Slick Modal Styles */
-  slickModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  slickModalContent: { backgroundColor: '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 30, paddingBottom: 40, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20 },
-  slickModalHandle: { width: 40, height: 6, backgroundColor: '#eee', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
-  slickModalTitle: { fontSize: 24, fontWeight: '800', color: '#111', marginBottom: 12, fontFamily: 'RussoOne_400Regular' },
-  slickModalText: { fontSize: 16, color: '#444', marginBottom: 30, lineHeight: 24 },
+  slickModalOverlay: { flex: 1, backgroundColor: isDark ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  slickModalContent: { backgroundColor: isDark ? '#000000' : '#fff', borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 30, paddingBottom: 40, width: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 20, borderWidth: isDark ? 1 : 0, borderColor: isDark ? '#222' : 'transparent' },
+  slickModalHandle: { width: 40, height: 6, backgroundColor: isDark ? '#333' : '#eee', borderRadius: 3, alignSelf: 'center', marginBottom: 20 },
+  slickModalTitle: { fontSize: 24, fontWeight: '800', color: isDark ? '#fff' : '#111', marginBottom: 12, fontFamily: 'RussoOne_400Regular' },
+  slickModalText: { fontSize: 16, color: isDark ? '#ccc' : '#444', marginBottom: 30, lineHeight: 24 },
   slickButtonRow: { flexDirection: 'row', gap: 12 },
   slickButton: { flex: 1, height: 56, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  slickButtonPrimary: { backgroundColor: '#111' },
-  slickButtonSecondary: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#111' },
-  slickButtonTextPrimary: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  slickButtonTextSecondary: { color: '#111', fontSize: 16, fontWeight: '700' },
+  slickButtonPrimary: { backgroundColor: isDark ? '#fff' : '#111' },
+  slickButtonSecondary: { backgroundColor: isDark ? '#000' : '#fff', borderWidth: 2, borderColor: isDark ? '#fff' : '#111' },
+  slickButtonTextPrimary: { color: isDark ? '#000' : '#fff', fontSize: 16, fontWeight: '700' },
+  slickButtonTextSecondary: { color: isDark ? '#fff' : '#111', fontSize: 16, fontWeight: '700' },
   aboutScroll: { maxHeight: 350 },
-  aboutDescription: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 20 },
-  featureSection: { backgroundColor: '#f9f9f9', borderRadius: 24, padding: 20, marginBottom: 20 },
-  featureHeading: { fontSize: 14, fontWeight: '800', color: '#111', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 15 },
+  aboutDescription: { fontSize: 15, color: isDark ? '#ddd' : '#333', lineHeight: 22, marginBottom: 20 },
+  featureSection: { backgroundColor: isDark ? '#111' : '#f9f9f9', borderRadius: 24, padding: 20, marginBottom: 20 },
+  featureHeading: { fontSize: 14, fontWeight: '800', color: isDark ? '#fff' : '#111', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 15 },
   featureItem: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  featureText: { fontSize: 14, color: '#333', fontWeight: '500' },
-  versionText: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 10 },
+  featureText: { fontSize: 14, color: isDark ? '#ddd' : '#333', fontWeight: '500' },
+  versionText: { fontSize: 12, color: isDark ? '#666' : '#999', textAlign: 'center', marginTop: 10 },
 });

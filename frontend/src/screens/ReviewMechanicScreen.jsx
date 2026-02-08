@@ -12,12 +12,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 import dbManager from '../utils/database';
 import syncManager from '../utils/SyncManager';
 import authService from './authService';
 
 const ReviewMechanicScreen = ({ route, navigation }) => {
   const { mechanicId, mechanicName, callDuration = 0 } = route.params || {};
+  const { theme, isDark } = useTheme();
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -166,22 +168,22 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: isDark ? '#000000' : '#fafafa' }]}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
-          <Text style={styles.title}>Rate Your Experience</Text>
-          <Text style={styles.mechanicName}>{mechanicName}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Rate Your Experience</Text>
+          <Text style={[styles.mechanicName, { color: theme.text }]}>{mechanicName}</Text>
 
           {callDuration > 0 && (
-            <Text style={styles.callDuration}>
+            <Text style={[styles.callDuration, { color: theme.textSecondary }]}>
               Call duration: {Math.floor(callDuration / 60)}m {callDuration % 60}s
             </Text>
           )}
 
           {/* Star Rating */}
-          <View style={styles.ratingContainer}>
-            <Text style={styles.ratingLabel}>How was the service?</Text>
+          <View style={[styles.ratingContainer, { backgroundColor: isDark ? '#111111' : '#ffffff', borderColor: isDark ? '#222222' : '#f0f0f0' }]}>
+            <Text style={[styles.ratingLabel, { color: theme.text }]}>How was the service?</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <TouchableOpacity
@@ -196,7 +198,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
               ))}
             </View>
             {rating > 0 && (
-              <Text style={styles.ratingText}>
+              <Text style={[styles.ratingText, { color: theme.text }]}>
                 {rating === 1 && 'Poor'}
                 {rating === 2 && 'Fair'}
                 {rating === 3 && 'Good'}
@@ -207,13 +209,14 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
           </View>
 
           {/* Comment */}
-          <View style={styles.commentContainer}>
-            <Text style={styles.commentLabel}>
+          <View style={[styles.commentContainer, { backgroundColor: isDark ? '#111111' : '#ffffff', borderColor: isDark ? '#222222' : '#f0f0f0' }]}>
+            <Text style={[styles.commentLabel, { color: theme.text }]}>
               Additional comments (optional)
             </Text>
             <TextInput
-              style={styles.commentInput}
+              style={[styles.commentInput, { backgroundColor: isDark ? '#000000' : '#fafafa', borderColor: isDark ? '#222222' : '#f0f0f0', color: theme.text }]}
               placeholder="Tell us about your experience..."
+              placeholderTextColor={theme.textSecondary}
               value={comment}
               onChangeText={setComment}
               multiline
@@ -225,14 +228,14 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
 
           {/* Buttons */}
           <TouchableOpacity
-            style={[styles.submitButton, loading && styles.buttonDisabled]}
+            style={[styles.submitButton, loading && styles.buttonDisabled, isDark && { backgroundColor: '#FFFFFF' }]}
             onPress={handleSubmitReview}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={isDark ? '#000000' : '#ffffff'} />
             ) : (
-              <Text style={styles.submitButtonText}>Submit Review</Text>
+              <Text style={[styles.submitButtonText, isDark && { color: '#000000' }]}>Submit Review</Text>
             )}
           </TouchableOpacity>
 
@@ -241,7 +244,7 @@ const ReviewMechanicScreen = ({ route, navigation }) => {
             onPress={handleSkip}
             disabled={loading}
           >
-            <Text style={styles.skipButtonText}>Skip for Now</Text>
+            <Text style={[styles.skipButtonText, { color: theme.textSecondary }]}>Skip for Now</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
